@@ -1,0 +1,99 @@
+version: "1.0.0"
+resources:
+  - resource_type: oci_core_vcn
+    description: Virtual Cloud Network
+    example: |
+      resource "oci_core_vcn" "main" {
+        compartment_id = var.compartment_id
+        cidr_blocks    = ["10.0.0.0/16"]
+        display_name   = "galley-vcn"
+      }
+
+  - resource_type: oci_core_subnet
+    description: サブネット
+    example: |
+      resource "oci_core_subnet" "public" {
+        compartment_id = var.compartment_id
+        vcn_id         = oci_core_vcn.main.id
+        cidr_block     = "10.0.1.0/24"
+        display_name   = "public-subnet"
+      }
+
+  - resource_type: oci_core_security_list
+    description: セキュリティリスト
+    example: |
+      resource "oci_core_security_list" "main" {
+        compartment_id = var.compartment_id
+        vcn_id         = oci_core_vcn.main.id
+        display_name   = "galley-security-list"
+      }
+
+  - resource_type: oci_core_instance
+    description: Computeインスタンス
+    example: |
+      resource "oci_core_instance" "app" {
+        compartment_id      = var.compartment_id
+        availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+        shape               = "VM.Standard.E4.Flex"
+        display_name        = "galley-app"
+      }
+
+  - resource_type: oci_load_balancer_load_balancer
+    description: ロードバランサー
+    example: |
+      resource "oci_load_balancer_load_balancer" "main" {
+        compartment_id = var.compartment_id
+        display_name   = "galley-lb"
+        shape          = "flexible"
+        subnet_ids     = [oci_core_subnet.public.id]
+      }
+
+  - resource_type: oci_database_autonomous_database
+    description: Autonomous Database
+    example: |
+      resource "oci_database_autonomous_database" "main" {
+        compartment_id           = var.compartment_id
+        db_name                  = "galleydb"
+        display_name             = "galley-adb"
+        cpu_core_count           = 1
+        data_storage_size_in_tbs = 1
+      }
+
+  - resource_type: oci_containerengine_cluster
+    description: OKEクラスター
+    example: |
+      resource "oci_containerengine_cluster" "main" {
+        compartment_id     = var.compartment_id
+        kubernetes_version = "v1.28.2"
+        name               = "galley-oke"
+        vcn_id             = oci_core_vcn.main.id
+      }
+
+  - resource_type: oci_objectstorage_bucket
+    description: Object Storageバケット
+    example: |
+      resource "oci_objectstorage_bucket" "main" {
+        compartment_id = var.compartment_id
+        namespace      = data.oci_objectstorage_namespace.ns.namespace
+        name           = "galley-bucket"
+        access_type    = "NoPublicAccess"
+      }
+
+  - resource_type: oci_identity_compartment
+    description: コンパートメント
+    example: |
+      resource "oci_identity_compartment" "galley" {
+        compartment_id = var.tenancy_ocid
+        name           = "galley"
+        description    = "Galley application compartment"
+      }
+
+  - resource_type: oci_apigateway_gateway
+    description: API Gateway
+    example: |
+      resource "oci_apigateway_gateway" "main" {
+        compartment_id = var.compartment_id
+        endpoint_type  = "PUBLIC"
+        subnet_id      = oci_core_subnet.public.id
+        display_name   = "galley-apigw"
+      }

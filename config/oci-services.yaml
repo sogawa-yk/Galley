@@ -1,0 +1,150 @@
+version: "1.0.0"
+services:
+  - name: Compute
+    category: コンピュート
+    description: 仮想マシンインスタンス（VM）
+    use_cases:
+      - Webサーバー
+      - アプリケーションサーバー
+      - バッチ処理
+    constraints:
+      - Flexシェイプ推奨（コスト最適化）
+
+  - name: Container Engine for Kubernetes (OKE)
+    category: コンピュート
+    description: マネージドKubernetesサービス
+    use_cases:
+      - コンテナオーケストレーション
+      - マイクロサービス
+    constraints:
+      - ノードプール最小3ノード推奨
+
+  - name: Functions
+    category: コンピュート
+    description: サーバーレス関数実行環境
+    use_cases:
+      - イベント駆動処理
+      - 軽量API
+
+  - name: Autonomous Database
+    category: データベース
+    description: 自律型データベース（ATP/ADW）
+    use_cases:
+      - OLTP/OLAP
+      - JSON Document Store
+    constraints:
+      - Always Free枠あり
+
+  - name: MySQL Database Service
+    category: データベース
+    description: マネージドMySQLサービス
+    use_cases:
+      - MySQL互換アプリケーション
+      - WordPress等のCMS
+
+  - name: NoSQL Database
+    category: データベース
+    description: キーバリュー/ドキュメントストア
+    use_cases:
+      - IoTデータ
+      - セッション管理
+
+  - name: Virtual Cloud Network (VCN)
+    category: ネットワーク
+    description: 仮想クラウドネットワーク
+    use_cases:
+      - ネットワーク分離
+      - サブネット設計
+
+  - name: Load Balancer
+    category: ネットワーク
+    description: L7ロードバランサー
+    use_cases:
+      - HTTP/HTTPS負荷分散
+      - SSLターミネーション
+
+  - name: API Gateway
+    category: ネットワーク
+    description: APIマネジメントサービス
+    use_cases:
+      - REST API公開
+      - 認証・レート制限
+
+  - name: FastConnect
+    category: ネットワーク
+    description: 専用線接続サービス
+    use_cases:
+      - オンプレミス接続
+      - 低レイテンシ通信
+
+  - name: Identity and Access Management (IAM)
+    category: セキュリティ
+    description: 認証・認可サービス
+    use_cases:
+      - ユーザー管理
+      - ポリシーベースアクセス制御
+
+  - name: Vault
+    category: セキュリティ
+    description: 鍵管理・シークレット管理サービス
+    use_cases:
+      - 暗号鍵管理
+      - シークレット保管
+
+  - name: Web Application Firewall (WAF)
+    category: セキュリティ
+    description: Webアプリケーションファイアウォール
+    use_cases:
+      - DDoS防御
+      - OWASP Top 10対策
+
+  - name: Object Storage
+    category: ストレージ
+    description: オブジェクトストレージ
+    use_cases:
+      - 静的ファイル保存
+      - バックアップ
+    constraints:
+      - Standard/Archive/Infrequent Accessの3ティア
+
+  - name: Block Volume
+    category: ストレージ
+    description: ブロックストレージ
+    use_cases:
+      - VMのデータディスク
+      - データベースストレージ
+
+  - name: File Storage
+    category: ストレージ
+    description: NFSファイルストレージ
+    use_cases:
+      - 共有ファイルシステム
+      - コンテナ永続ボリューム
+
+  - name: Monitoring
+    category: 監視・運用
+    description: メトリクス監視サービス
+    use_cases:
+      - リソース監視
+      - アラート設定
+
+  - name: Logging
+    category: 監視・運用
+    description: ログ管理サービス
+    use_cases:
+      - アプリケーションログ
+      - 監査ログ
+
+  - name: Notifications
+    category: 監視・運用
+    description: 通知サービス
+    use_cases:
+      - アラート通知
+      - イベント通知
+
+  - name: Container Registry (OCIR)
+    category: コンピュート
+    description: コンテナイメージレジストリ
+    use_cases:
+      - Dockerイメージ管理
+      - CI/CDパイプライン

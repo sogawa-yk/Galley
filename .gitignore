@@ -1,0 +1,20 @@
+# ビルド成果物
+dist/
+
+# 依存パッケージ
+node_modules/
+
+# ランタイムデータ（ローカルテスト用）
+.galley/
+
+# IDE（個人設定）
+.vscode/*.code-workspace
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 環境変数（将来の拡張用）
+.env
+.env.local

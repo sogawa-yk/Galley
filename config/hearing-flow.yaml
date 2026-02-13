@@ -1,0 +1,20 @@
+version: "1.0.0"
+default_order:
+  - project_overview
+  - scale
+  - traffic
+  - database
+  - network
+  - security
+  - availability
+  - performance
+  - operations
+  - budget_schedule
+
+conditional_rules:
+  - condition: "scale.concurrent_users > 10000"
+    add_categories:
+      - performance
+  - condition: "network.multi_region == true"
+    add_categories:
+      - availability

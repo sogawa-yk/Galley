@@ -1,0 +1,9 @@
+version: "1.0.0"
+categories:
+  - id: scale
+    label: 規模
+    required: true
+    description: テスト用の質問カテゴリ
+  - id: traffic
+    label: トラフィック
+    required: false

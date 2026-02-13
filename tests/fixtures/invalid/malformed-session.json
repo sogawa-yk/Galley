@@ -1,0 +1,5 @@
+{
+  "session_id": "not-a-valid-uuid",
+  "status": "invalid_status",
+  "project_description": 12345
+}

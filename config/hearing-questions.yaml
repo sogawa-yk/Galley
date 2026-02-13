@@ -1,0 +1,51 @@
+version: "1.0.0"
+categories:
+  - id: project_overview
+    label: 案件概要
+    required: true
+    description: 業種、案件の種類（新規構築/移行/モダナイゼーション）
+
+  - id: scale
+    label: 規模
+    required: true
+    description: 想定ユーザー数、同時接続数
+
+  - id: traffic
+    label: トラフィック特性
+    required: true
+    description: スパイクの有無・予測可能性
+
+  - id: database
+    label: データベース
+    required: true
+    description: 既存DB、移行要件、データ量
+
+  - id: network
+    label: ネットワーク
+    required: true
+    description: マルチリージョン、オンプレ接続、VPN/専用線
+
+  - id: security
+    label: セキュリティ・認証
+    required: true
+    description: 認証方式、コンプライアンス要件
+
+  - id: availability
+    label: 可用性・DR
+    required: true
+    description: SLA目標、DR要件、バックアップ方針
+
+  - id: performance
+    label: パフォーマンス
+    required: false
+    description: レイテンシ要件、スループット要件（規模に依存）
+
+  - id: operations
+    label: 運用・監視
+    required: false
+    description: ログ管理、監視要件、ログ保持期間
+
+  - id: budget_schedule
+    label: 予算・スケジュール
+    required: true
+    description: コスト制約、デモ期限
