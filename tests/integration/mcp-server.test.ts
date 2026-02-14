@@ -572,7 +572,7 @@ describe('MCP Server Integration', () => {
           session_id: sessionId,
           files: [
             { name: 'main.tf', content: 'resource "oci_core_vcn" "main" {}' },
-            { name: 'variables.tf', content: 'variable "compartment_id" {}' },
+            { name: 'variables.tf', content: 'variable "compartment_ocid" {}' },
           ],
         },
       });

@@ -28,6 +28,17 @@ Mermaid記法で出力 → export_mermaid ツールでファイル保存
 ### 4. IaCテンプレート
 Terraform（OCI Provider）形式 → export_iac ツールでファイル保存
 
+**重要: OCI Resource Manager互換にすること**
+- OCIリファレンス（Resources: galley://references/oci-terraform）のprovider設定例とresource_manager_schema定義に従う
+- `variable "tenancy_ocid" {}`、`variable "region" {}`、`variable "compartment_ocid" {}` を宣言し、defaultは設定しない（Resource Managerが自動注入する）
+- providerブロックで `region = var.region` を指定する
+- 認証パラメータ（user_ocid, fingerprint, private_key_path）は含めない（Resource Managerが処理する）
+- **schema.yaml を必ず生成する**: Resource Managerのスタック作成画面で変数入力UIをリッチにするためのファイル
+  - Resource Manager自動注入変数（region, tenancy_ocid, compartment_ocid）は `visible: false` にする
+  - ユーザーが入力すべき変数には適切な型（enum, password, oci:core:ssh:publickey等）・説明・デフォルト値を設定する
+  - groupingsでUI上のセクションを論理的にグループ化する
+  - locale は "ja" を設定する
+
 ### 5. 警告・推奨事項
 アンチパターンや未確認項目に基づく注意点
 

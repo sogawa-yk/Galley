@@ -127,10 +127,23 @@ export const CreateSessionArgsSchema = z.object({
   project_description: z.string().min(1).max(5000),
 });
 
+export const CategoryEnum = z.enum([
+  'project_overview',
+  'scale',
+  'traffic',
+  'database',
+  'network',
+  'security',
+  'availability',
+  'performance',
+  'operations',
+  'budget_schedule',
+]);
+
 export const SaveAnswerArgsSchema = z.object({
   session_id: z.string().uuid(),
   question_id: z.string(),
-  category: z.string(),
+  category: CategoryEnum,
   value: z.union([z.string(), z.number(), z.boolean()]),
   source: z.enum(['user_selected', 'user_free_text', 'estimated', 'not_answered']),
   estimation: EstimationSchema.optional(),
@@ -249,6 +262,25 @@ export const OciArchitecturesConfigSchema = z.object({
 
 export const OciTerraformConfigSchema = z.object({
   version: z.string(),
+  provider: z
+    .object({
+      example: z.string(),
+    })
+    .optional(),
+  resource_manager_schema: z
+    .object({
+      description: z.string(),
+      example: z.string(),
+      variable_types: z
+        .array(
+          z.object({
+            type: z.string(),
+            description: z.string(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
   resources: z.array(
     z.object({
       resource_type: z.string(),
