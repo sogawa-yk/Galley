@@ -8,7 +8,11 @@ export type GalleyErrorCode =
   | 'FILE_WRITE_ERROR'
   | 'INVALID_FILENAME'
   | 'PATH_TRAVERSAL'
-  | 'CONFIG_LOAD_ERROR';
+  | 'CONFIG_LOAD_ERROR'
+  | 'OCI_CLI_NOT_FOUND'
+  | 'OCI_CLI_ERROR'
+  | 'DEPLOY_ERROR'
+  | 'TERRAFORM_NOT_EXPORTED';
 
 export class GalleyError extends Error {
   constructor(

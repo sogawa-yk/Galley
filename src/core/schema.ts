@@ -205,6 +205,56 @@ export const ExportAllArgsSchema = z.object({
     .optional(),
 });
 
+// ===== デプロイ関連スキーマ =====
+
+export const RmJobRecordSchema = z.object({
+  job_id: z.string(),
+  job_type: z.enum(['plan', 'apply']),
+  status: z.string(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime().optional(),
+});
+
+export const DeployStateSchema = z.object({
+  session_id: z.string().uuid(),
+  stack_id: z.string().optional(),
+  stack_display_name: z.string().optional(),
+  compartment_id: z.string().optional(),
+  terraform_version: z.string().optional(),
+  jobs: z.array(RmJobRecordSchema).default([]),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+// ===== デプロイTool引数スキーマ =====
+
+export const CheckOciCliArgsSchema = z.object({});
+
+export const CreateRmStackArgsSchema = z.object({
+  session_id: z.string().uuid(),
+  compartment_id: z.string().min(1),
+  display_name: z.string().optional(),
+  terraform_version: z.string().optional(),
+});
+
+export const RunRmPlanArgsSchema = z.object({
+  session_id: z.string().uuid(),
+  stack_id: z.string().optional(),
+});
+
+export const RunRmApplyArgsSchema = z.object({
+  session_id: z.string().uuid(),
+  stack_id: z.string().optional(),
+  execution_plan_strategy: z.enum(['AUTO_APPROVED', 'FROM_PLAN_JOB_ID']),
+  plan_job_id: z.string().optional(),
+});
+
+export const GetRmJobStatusArgsSchema = z.object({
+  session_id: z.string().uuid(),
+  job_id: z.string().min(1),
+  include_logs: z.boolean().optional().default(false),
+});
+
 // ===== 設定ファイルスキーマ =====
 
 export const HearingQuestionsConfigSchema = z.object({

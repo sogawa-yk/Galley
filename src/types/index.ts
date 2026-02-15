@@ -17,3 +17,8 @@ export type {
   Component,
   Warning,
 } from './architecture.js';
+
+export type {
+  DeployState,
+  RmJobRecord,
+} from './deploy.js';

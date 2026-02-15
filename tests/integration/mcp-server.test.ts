@@ -77,12 +77,14 @@ describe('MCP Server Integration', () => {
   // Tools Discovery
   // =============================================
   describe('Tools Discovery', () => {
-    it('should list all 12 registered tools', async () => {
+    it('should list all 17 registered tools', async () => {
       const { tools } = await client.listTools();
       const toolNames = tools.map((t) => t.name).sort();
 
       expect(toolNames).toEqual([
+        'check_oci_cli',
         'complete_hearing',
+        'create_rm_stack',
         'create_session',
         'delete_session',
         'export_all',
@@ -90,7 +92,10 @@ describe('MCP Server Integration', () => {
         'export_mermaid',
         'export_summary',
         'get_hearing_result',
+        'get_rm_job_status',
         'list_sessions',
+        'run_rm_apply',
+        'run_rm_plan',
         'save_answer',
         'save_answers_batch',
         'save_architecture',
@@ -176,11 +181,12 @@ describe('MCP Server Integration', () => {
   // Prompts Discovery
   // =============================================
   describe('Prompts Discovery', () => {
-    it('should list all 3 registered prompts', async () => {
+    it('should list all 4 registered prompts', async () => {
       const { prompts } = await client.listPrompts();
       const promptNames = prompts.map((p) => p.name).sort();
 
       expect(promptNames).toEqual([
+        'deploy-to-rm',
         'generate-architecture',
         'resume-hearing',
         'start-hearing',
@@ -226,6 +232,21 @@ describe('MCP Server Integration', () => {
       const content = result.messages[0]?.content;
       if (typeof content === 'object' && 'text' in content) {
         expect(content.text).toContain(fakeId);
+      }
+    });
+
+    it('should get deploy-to-rm prompt', async () => {
+      const fakeId = crypto.randomUUID();
+      const result = await client.getPrompt({
+        name: 'deploy-to-rm',
+        arguments: { session_id: fakeId },
+      });
+
+      expect(result.messages).toHaveLength(1);
+      const content = result.messages[0]?.content;
+      if (typeof content === 'object' && 'text' in content) {
+        expect(content.text).toContain(fakeId);
+        expect(content.text).toContain('Resource Manager');
       }
     });
   });
