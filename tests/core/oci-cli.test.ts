@@ -11,13 +11,15 @@ import { createOciCli } from '../../src/core/oci-cli.js';
 import type { Logger } from '../../src/core/logger.js';
 
 function makeMockLogger(): Logger {
-  return {
+  const logger: Logger = {
     debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
     error: vi.fn(),
     setServer: vi.fn(),
+    forSession: vi.fn(() => logger),
   };
+  return logger;
 }
 
 // Helper to make execFile mock resolve

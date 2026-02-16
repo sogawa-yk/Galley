@@ -15,6 +15,7 @@ export interface Storage {
   exists(relativePath: string): Promise<boolean>;
   readText(relativePath: string): Promise<string>;
   writeText(relativePath: string, content: string): Promise<void>;
+  appendText(relativePath: string, content: string): Promise<void>;
   listDirs(relativePath: string): Promise<string[]>;
   removeDir(relativePath: string): Promise<void>;
   validatePath(relativePath: string): string;
@@ -134,6 +135,17 @@ export function createStorage(options: StorageOptions): Storage {
       const absolutePath = validatePath(relativePath);
       try {
         await atomicWrite(absolutePath, content);
+      } catch (error) {
+        wrapFsError(error, 'write', relativePath);
+      }
+    },
+
+    async appendText(relativePath: string, content: string): Promise<void> {
+      const absolutePath = validatePath(relativePath);
+      try {
+        const dir = path.dirname(absolutePath);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.appendFile(absolutePath, content, 'utf-8');
       } catch (error) {
         wrapFsError(error, 'write', relativePath);
       }

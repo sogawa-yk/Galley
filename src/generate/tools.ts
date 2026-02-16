@@ -98,7 +98,8 @@ export function registerGenerateTools(
     };
 
     await storage.writeJson(`sessions/${parsed.session_id}/architecture.json`, architectureOutput);
-    logger.info(`Architecture saved for session: ${parsed.session_id}`);
+    const slog = logger.forSession(parsed.session_id, storage, 'save_architecture');
+    slog.info(`Architecture saved for session: ${parsed.session_id}`);
 
     return {
       content: [{ type: 'text', text: JSON.stringify({ saved: true, session_id: parsed.session_id, component_count: parsed.components.length }) }],

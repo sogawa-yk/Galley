@@ -144,6 +144,36 @@ describe('Storage', () => {
     });
   });
 
+  describe('appendText', () => {
+    it('should create file and append content', async () => {
+      const storage = createStorage({ baseDir: tmpDir });
+      await storage.appendText('log.txt', 'line1\n');
+      const result = await fs.readFile(path.join(tmpDir, 'log.txt'), 'utf-8');
+      expect(result).toBe('line1\n');
+    });
+
+    it('should append to existing file', async () => {
+      const storage = createStorage({ baseDir: tmpDir });
+      await storage.appendText('log.txt', 'line1\n');
+      await storage.appendText('log.txt', 'line2\n');
+      const result = await fs.readFile(path.join(tmpDir, 'log.txt'), 'utf-8');
+      expect(result).toBe('line1\nline2\n');
+    });
+
+    it('should create parent directories', async () => {
+      const storage = createStorage({ baseDir: tmpDir });
+      await storage.appendText('a/b/log.txt', 'data\n');
+      const result = await fs.readFile(path.join(tmpDir, 'a/b/log.txt'), 'utf-8');
+      expect(result).toBe('data\n');
+    });
+
+    it('should reject path traversal', async () => {
+      const storage = createStorage({ baseDir: tmpDir });
+      await expect(storage.appendText('../../etc/passwd', 'x')).rejects.toThrow(GalleyError);
+      await expect(storage.appendText('../../etc/passwd', 'x')).rejects.toThrow(/Path traversal detected/);
+    });
+  });
+
   describe('exists', () => {
     it('should return true for existing file', async () => {
       const storage = createStorage({ baseDir: tmpDir });

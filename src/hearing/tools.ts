@@ -105,7 +105,8 @@ export function registerHearingTools(
     await storage.writeJson(`sessions/${sessionId}/hearing-result.json`, hearingResult);
 
     server.sendResourceListChanged();
-    logger.info(`Session created: ${sessionId}`);
+    const slog = logger.forSession(sessionId, storage, 'create_session');
+    slog.info(`Session created: ${sessionId}`);
 
     return {
       content: [{ type: 'text', text: JSON.stringify({ session_id: sessionId, created_at: now }) }],
@@ -161,7 +162,8 @@ export function registerHearingTools(
     await storage.removeDir(`output/${parsed.session_id}`);
 
     server.sendResourceListChanged();
-    logger.info(`Session deleted: ${parsed.session_id}`);
+    const slog = logger.forSession(parsed.session_id, storage, 'delete_session');
+    slog.info(`Session deleted: ${parsed.session_id}`);
 
     return {
       content: [{ type: 'text', text: JSON.stringify({ deleted: true, session_id: parsed.session_id }) }],

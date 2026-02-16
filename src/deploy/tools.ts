@@ -137,7 +137,8 @@ export function registerDeployTools(
     };
     await saveDeployState(storage, state);
 
-    logger.info(`RM stack created: ${stackId}`, { sessionId, displayName });
+    const slog = logger.forSession(sessionId, storage, 'create_rm_stack');
+    slog.info(`RM stack created: ${stackId}`, { sessionId, displayName });
 
     return {
       content: [{ type: 'text', text: JSON.stringify({ stack_id: stackId, display_name: displayName }) }],
@@ -181,7 +182,8 @@ export function registerDeployTools(
     state.jobs.push(jobRecord);
     await saveDeployState(storage, state);
 
-    logger.info(`Plan job created: ${jobId}`, { sessionId, stackId });
+    const slog = logger.forSession(sessionId, storage, 'run_rm_plan');
+    slog.info(`Plan job created: ${jobId}`, { sessionId, stackId });
 
     return {
       content: [{ type: 'text', text: JSON.stringify({ job_id: jobId, status: jobRecord.status }) }],
@@ -236,7 +238,8 @@ export function registerDeployTools(
     state.jobs.push(jobRecord);
     await saveDeployState(storage, state);
 
-    logger.info(`Apply job created: ${jobId}`, { sessionId, stackId });
+    const slog = logger.forSession(sessionId, storage, 'run_rm_apply');
+    slog.info(`Apply job created: ${jobId}`, { sessionId, stackId });
 
     return {
       content: [{ type: 'text', text: JSON.stringify({ job_id: jobId, status: jobRecord.status }) }],
@@ -287,7 +290,8 @@ export function registerDeployTools(
           response.logs = logsData.data.map((entry) => entry.message ?? '').join('\n');
         }
       } catch (error) {
-        logger.warning('Failed to fetch job logs', error);
+        const slog = logger.forSession(sessionId, storage, 'get_rm_job_status');
+        slog.warning('Failed to fetch job logs', error);
         response.logs_error = 'Failed to fetch logs';
       }
     }
