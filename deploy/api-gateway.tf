@@ -23,9 +23,13 @@ resource "oci_apigateway_gateway" "galley" {
 # ============================================================
 #
 # URLトークン認証の仕組み:
-# 1. API Gatewayはクエリパラメータ "token" の存在を検証する（存在チェック）
+# 1. API Gatewayはクエリパラメータ "token" の存在をログに記録する（PERMISSIVE）
 # 2. トークン値の一致検証はGalleyアプリケーション側で実施する
 # 3. これにより、OCI Functions等の追加サービスを不要にしている
+#
+# 注意: validation_modeをENFORCINGにすると、Claude Desktop等のMCPクライアントが
+# 初期ハンドシェイク時にtokenなしリクエストを送信した際に400エラーで拒否される。
+# そのためPERMISSIVE（ログのみ）に設定し、実際のtoken検証はアプリ側で行う。
 #
 
 resource "oci_apigateway_deployment" "galley" {
@@ -54,7 +58,7 @@ resource "oci_apigateway_deployment" "galley" {
             required = true
           }
 
-          validation_mode = "ENFORCING"
+          validation_mode = "PERMISSIVE"
         }
       }
     }
