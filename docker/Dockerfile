@@ -17,7 +17,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 # アプリケーションソースのコピーとインストール
 COPY src/ src/
 COPY config/ config/
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-editable
 
 # ============================================================
 # Stage 2: Runtime - ツールのインストールとアプリケーション配置
