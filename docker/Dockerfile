@@ -66,8 +66,10 @@ RUN groupadd --gid 1000 galley && \
 COPY --from=builder /build/.venv /app/.venv
 COPY --from=builder /build/config /app/config
 
-# OCI CLIのインストール（仮想環境内にpipで追加）
-RUN /app/.venv/bin/pip install --no-cache-dir oci-cli
+# OCI CLIのインストール（uvを使用）
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /usr/local/bin/uv
+RUN uv pip install --python /app/.venv/bin/python --no-cache oci-cli && \
+    rm /usr/local/bin/uv
 
 # 環境変数の設定
 ENV PATH="/app/.venv/bin:${PATH}" \
