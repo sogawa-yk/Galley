@@ -1,15 +1,45 @@
 """ヒアリング層のMCPツール定義。"""
 
+from pathlib import Path
 from typing import Any
 
+import yaml
 from fastmcp import FastMCP
 
 from galley.models.errors import GalleyError
 from galley.services.hearing import HearingService
 
 
-def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService) -> None:
+def register_hearing_tools(
+    mcp: FastMCP, hearing_service: HearingService, *, config_dir: Path | None = None
+) -> None:
     """ヒアリング関連のMCPツールを登録する。"""
+
+    @mcp.tool()
+    async def get_hearing_questions() -> dict[str, Any]:
+        """ヒアリング質問定義を取得する。
+
+        利用可能な質問ID、質問文、カテゴリ、回答タイプを含む質問定義を返します。
+        ヒアリング開始時に呼び出して、どのような質問があるかを把握してください。
+        """
+        if config_dir is None:
+            return {"error": "ConfigError", "message": "config_dir is not set"}
+        questions_file = config_dir / "hearing-questions.yaml"
+        with open(questions_file, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+
+    @mcp.tool()
+    async def get_hearing_flow() -> dict[str, Any]:
+        """ヒアリングフロー定義を取得する。
+
+        質問の提示順序とフェーズ構成を返します。
+        ヒアリング開始時に呼び出して、質問をどの順序で提示するかを把握してください。
+        """
+        if config_dir is None:
+            return {"error": "ConfigError", "message": "config_dir is not set"}
+        flow_file = config_dir / "hearing-flow.yaml"
+        with open(flow_file, encoding="utf-8") as f:
+            return yaml.safe_load(f)
 
     @mcp.tool()
     async def create_session() -> dict[str, Any]:
