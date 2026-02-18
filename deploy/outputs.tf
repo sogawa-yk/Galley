@@ -1,7 +1,6 @@
 output "mcp_endpoint_url" {
   description = "MCP接続用エンドポイントURL（URLトークン付き）。MCPホスト（Claude Desktop等）の設定に使用。"
   value       = "${oci_apigateway_gateway.galley.hostname}/mcp?token=${random_password.url_token.result}"
-  sensitive   = true
 }
 
 output "api_gateway_hostname" {
@@ -12,7 +11,6 @@ output "api_gateway_hostname" {
 output "url_token" {
   description = "URLトークン（認証用）"
   value       = random_password.url_token.result
-  sensitive   = true
 }
 
 output "object_storage_bucket" {
