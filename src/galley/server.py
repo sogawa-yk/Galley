@@ -1,6 +1,8 @@
 """FastMCPベースのMCPサーバーエントリポイント。"""
 
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from galley.config import ServerConfig
 from galley.prompts.design import register_design_prompts
@@ -46,5 +48,10 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     register_export_tools(mcp, design_service)
     register_design_resources(mcp, config.config_dir)
     register_design_prompts(mcp)
+
+    # ヘルスチェックエンドポイント
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health_check(request: Request) -> JSONResponse:
+        return JSONResponse({"status": "ok"})
 
     return mcp
