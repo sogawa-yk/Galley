@@ -17,3 +17,4 @@ class ServerConfig(BaseSettings):
     config_dir: Path = _REPO_ROOT / "config"
     host: str = "0.0.0.0"
     port: int = 8000
+    url_token: str = ""
