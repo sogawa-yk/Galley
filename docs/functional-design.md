@@ -1,492 +1,903 @@
-# 機能設計書（Functional Design Document）
+# 機能設計書 (Functional Design Document)
 
-## 1. システム全体構成
-
-### 1.1 MVP段階のシステム構成図
+## システム構成図
 
 ```mermaid
 graph TB
-    subgraph User["ユーザー環境"]
-        AI[AIクライアント<br/>Claude Desktop / ChatGPT等]
+    subgraph UserEnv["利用者の環境"]
+        MCPHost["MCPホスト<br/>(Claude Desktop / claude.ai)"]
     end
 
-    subgraph MCP["MCPサーバー（ローカル実行）"]
-        GH[galley-hearing<br/>ヒアリング管理]
-        GG[galley-generate<br/>アウトプット生成]
-    end
-
-    subgraph Local["ローカルファイルシステム"]
-        Sessions[sessions/<br/>セッションデータ JSON]
-        Output[output/<br/>生成物 Mermaid / Terraform]
-        Config[config/<br/>質問テンプレート / プロンプト]
-    end
-
-    AI <-->|MCP Protocol| GH
-    AI <-->|MCP Protocol| GG
-    GH -->|読み書き| Sessions
-    GH -->|参照| Config
-    GG -->|参照| Sessions
-    GG -->|書き出し| Output
-    GG -->|参照| Config
-```
-
-### 1.2 MCPの3プリミティブの活用
-
-| プリミティブ | 役割 | 具体例 |
-|------------|------|--------|
-| **Resources** | AIクライアントにコンテキストを提供する読み取り専用データ | 質問テンプレート、OCIサービスカタログ、リファレンスアーキテクチャ |
-| **Tools** | AIクライアントが呼び出すアクション | セッション作成・保存・読み込み、ファイル出力 |
-| **Prompts** | 再利用可能なプロンプトテンプレート | ヒアリング開始プロンプト、アーキテクチャ生成プロンプト |
-
-### 1.3 コアフローの全体像
-
-```mermaid
-sequenceDiagram
-    actor User as プリセールスエンジニア
-    participant AI as AIクライアント（LLM）
-    participant GH as galley-hearing
-    participant GG as galley-generate
-    participant FS as ローカルファイル
-
-    User->>AI: 「在庫管理のクラウドネイティブ化デモを作りたい」
-    AI->>GH: Prompt: start-hearing を呼び出し
-    GH-->>AI: ヒアリング手順 + 質問テンプレート
-    AI->>GH: Tool: create_session(案件概要)
-    GH->>FS: セッションファイル作成
-    GH-->>AI: session_id
-
-    AI->>User: Q1. お客様の業種は？（番号選択）
-
-    loop 8〜12問のヒアリング
-        User->>AI: 回答（番号 or 自由入力）
-        AI->>GH: Tool: save_answer(session_id, question_id, answer)
-        GH->>FS: 回答を保存
-
-        alt 「わからない」を選択
-            Note over AI: LLM自身の知識で推測値と根拠を生成
-            AI->>User: 推測を提示（根拠付き）
-            User->>AI: 承認 or 調整
-            AI->>GH: Tool: save_answer(session_id, question_id, estimated_answer)
+    subgraph OCI["Oracle Cloud Infrastructure"]
+        subgraph PublicSubnet["パブリックサブネット"]
+            APIGW["API Gateway<br/>(HTTPS終端 + URLトークン認証)"]
         end
 
-        Note over AI: 質問テンプレート + 回答履歴から次の質問を判断
-        AI->>User: 次の質問（番号選択）
+        subgraph PrivateSubnet["プライベートサブネット"]
+            subgraph Container["Container Instance"]
+                MCP["Galley MCPサーバー<br/>(Python / FastMCP)"]
+                subgraph Services["サービス層"]
+                    HearingSvc["ヒアリングサービス"]
+                    DesignSvc["設計サービス"]
+                    InfraSvc["インフラサービス"]
+                    AppSvc["アプリケーションサービス"]
+                end
+                subgraph Tools["同梱ツール"]
+                    OCICLI["OCI CLI"]
+                    OCISDK["OCI SDK for Python"]
+                    TF["Terraform + OCI Provider"]
+                    Kubectl["kubectl"]
+                end
+            end
+        end
+
+        subgraph Storage["Object Storage"]
+            Sessions["セッションデータ"]
+            TFState["Terraform state"]
+            Templates["テンプレートストア"]
+            Rules["バリデーションルール"]
+        end
+
+        RP["Resource Principal<br/>(Dynamic Group + IAM Policy)"]
+        RM["Resource Manager"]
+        DevOps["DevOps Build Pipeline"]
+        OCIR["Container Registry"]
+        OKE["OKE Cluster"]
     end
 
-    AI->>GH: Tool: complete_hearing(session_id)
-    GH->>FS: ステータスを completed に更新
-
-    AI->>GH: Tool: get_hearing_result(session_id)
-    GH-->>AI: ヒアリング結果JSON
-
-    Note over AI: LLMがOCIアーキテクチャを設計
-
-    AI->>GG: Tool: save_architecture(session_id, architecture_data)
-    GG->>FS: アーキテクチャJSONを保存
-
-    AI->>GG: Tool: export_mermaid(session_id)
-    GG->>FS: Mermaidファイルを出力
-    GG-->>AI: ファイルパス
-
-    AI->>GG: Tool: export_iac(session_id, terraform_code)
-    GG->>FS: Terraformファイルを出力
-    GG-->>AI: ファイルパス
-
-    AI->>User: 結果を表示（サマリー + 構成図 + IaC）
+    MCPHost -- "SSE / StreamableHTTP" --> APIGW
+    APIGW --> MCP
+    MCP --> Services
+    Services --> Tools
+    HearingSvc --> Sessions
+    DesignSvc --> Rules
+    InfraSvc --> TFState
+    AppSvc --> Templates
+    Container -. "Resource Principal認証" .-> RP
+    InfraSvc --> RM
+    AppSvc --> DevOps
+    DevOps --> OCIR
+    AppSvc --> OKE
 ```
 
-### 1.4 役割分担: AIクライアント vs MCPサーバー
+## 技術スタック
 
-| 責務 | AIクライアント（LLM） | MCPサーバー |
-|------|---------------------|------------|
-| 質問の生成・判断 | **主担当**: テンプレートを参照しつつ、コンテキストに応じて質問を動的生成 | テンプレートの提供 |
-| 推測値の生成 | **主担当**: LLM自身の知識で推測・根拠を生成 | なし（将来: ナレッジストア検索） |
-| アーキテクチャ設計 | **主担当**: ヒアリング結果からOCIアーキテクチャを設計 | OCIリファレンスの提供 |
-| データ永続化 | なし | **主担当**: セッション・回答・生成物のファイル保存 |
-| ファイル出力 | なし | **主担当**: Mermaid・Terraform等のファイル書き出し |
-| 会話のナビゲーション | **主担当**: ヒアリングの進行制御 | 進捗管理の補助 |
+| 分類 | 技術 | 選定理由 |
+|------|------|----------|
+| 言語 | Python 3.12+ | OCI SDK for Pythonとの親和性、FastMCPの対応言語 |
+| MCPフレームワーク | FastMCP | Python向けMCPサーバー実装の標準フレームワーク |
+| OCI操作 | OCI CLI / OCI SDK for Python | CLI: 汎用コマンド実行、SDK: 構造化API呼び出し |
+| IaC | Terraform + OCI Provider | OCIリソースのプロビジョニング標準ツール |
+| コンテナ管理 | kubectl | OKEクラスターへのデプロイ操作 |
+| 認証 | Resource Principal | Container Instance向けのキーレス認証 |
+| データ永続化 | OCI Object Storage | スケーラブルなオブジェクトストレージ |
+| パッケージ管理 | uv | 高速なPythonパッケージマネージャー |
 
----
+## データモデル定義
 
-## 2. MCPサーバー設計
+### エンティティ: Session（ヒアリングセッション）
 
-### 2.1 galley-hearing サーバー
+```python
+@dataclass
+class Session:
+    id: str                          # UUID v4
+    status: SessionStatus            # "in_progress" | "completed"
+    answers: dict[str, Answer]       # 質問ID → 回答のマッピング
+    hearing_result: HearingResult | None  # ヒアリング完了後の構造化結果
+    architecture: Architecture | None     # 設計済みアーキテクチャ
+    created_at: datetime             # 作成日時（UTC）
+    updated_at: datetime             # 更新日時（UTC）
 
-ヒアリングフローの状態管理とデータ永続化を担当する。
-
-#### Resources
-
-| URI | 説明 |
-|-----|------|
-| `galley://templates/hearing-questions` | ヒアリング質問カテゴリテンプレート（JSON） |
-| `galley://templates/hearing-flow` | ヒアリングフローの進行ルール（分岐条件含む） |
-| `galley://schemas/hearing-result` | ヒアリング結果JSONスキーマ |
-| `galley://sessions` | 保存済みセッション一覧 |
-| `galley://sessions/{session_id}` | 特定セッションの詳細データ |
-
-#### Tools
-
-| ツール名 | 説明 | パラメータ | 戻り値 |
-|---------|------|-----------|--------|
-| `create_session` | 新規セッションを作成 | `project_description: string` | `session_id: string` |
-| `save_answer` | 回答を保存 | `session_id, question_id, category, value, source, estimation?` | 保存結果 |
-| `complete_hearing` | ヒアリングを完了にする | `session_id` | ヒアリング結果サマリー |
-| `get_hearing_result` | ヒアリング結果を取得 | `session_id` | HearingResult JSON |
-| `list_sessions` | セッション一覧を取得 | `status?: string` | セッション一覧 |
-| `delete_session` | セッションを削除 | `session_id` | 削除結果 |
-
-#### Prompts
-
-| プロンプト名 | 説明 | 引数 |
-|-------------|------|------|
-| `start-hearing` | ヒアリングを開始するプロンプト。役割定義・質問テンプレート・進行ルール・出力形式を含む | `project_description: string` |
-| `resume-hearing` | 中断したヒアリングを再開するプロンプト | `session_id: string` |
-
-### 2.2 galley-generate サーバー
-
-アーキテクチャ設計結果の保存とファイル出力を担当する。
-
-#### Resources
-
-| URI | 説明 |
-|-----|------|
-| `galley://references/oci-services` | OCIサービスカタログ（サービス名・用途・制約事項） |
-| `galley://references/oci-architectures` | OCIリファレンスアーキテクチャ集 |
-| `galley://references/oci-terraform` | OCI Terraform Providerのリソース一覧と使用例 |
-
-#### Tools
-
-| ツール名 | 説明 | パラメータ | 戻り値 |
-|---------|------|-----------|--------|
-| `save_architecture` | アーキテクチャ設計を保存 | `session_id, components[], decisions[], warnings[]` | 保存結果 |
-| `export_summary` | 要件サマリーをMarkdownファイルに出力 | `session_id` | ファイルパス |
-| `export_mermaid` | 構成図をMermaidファイルに出力 | `session_id, mermaid_code` | ファイルパス |
-| `export_iac` | IaCテンプレートをファイルに出力 | `session_id, files: {name, content}[]` | ファイルパス一覧 |
-| `export_all` | 全成果物を一括出力 | `session_id` | 出力ディレクトリパス |
-
-#### Prompts
-
-| プロンプト名 | 説明 | 引数 |
-|-------------|------|------|
-| `generate-architecture` | ヒアリング結果からOCIアーキテクチャを生成するプロンプト | `session_id: string` |
-
----
-
-## 3. データモデル定義
-
-### 3.1 ヒアリング結果JSONスキーマ
-
-このスキーマはシステム全体の基盤であり、アーキテクチャ生成・IaC生成・将来のナレッジ蓄積すべてがこのデータ構造に依存する。
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "HearingResult",
-  "description": "ヒアリング結果の構造化データ",
-  "type": "object",
-  "required": ["metadata", "project_overview", "requirements"],
-  "properties": {
-    "metadata": {
-      "type": "object",
-      "required": ["hearing_id", "created_at", "version"],
-      "properties": {
-        "hearing_id": { "type": "string", "format": "uuid" },
-        "created_at": { "type": "string", "format": "date-time" },
-        "updated_at": { "type": "string", "format": "date-time" },
-        "version": { "type": "string", "const": "1.0.0" },
-        "status": {
-          "type": "string",
-          "enum": ["in_progress", "completed"]
-        }
-      }
-    },
-    "project_overview": {
-      "type": "object",
-      "required": ["description", "industry", "project_type"],
-      "properties": {
-        "description": {
-          "type": "string",
-          "description": "ユーザーが入力した案件概要の自然言語テキスト"
-        },
-        "industry": {
-          "$ref": "#/definitions/answered_item",
-          "description": "業種"
-        },
-        "project_type": {
-          "$ref": "#/definitions/answered_item",
-          "description": "案件種別"
-        }
-      }
-    },
-    "requirements": {
-      "type": "object",
-      "properties": {
-        "scale": {
-          "type": "object",
-          "properties": {
-            "concurrent_users": { "$ref": "#/definitions/answered_item" },
-            "total_users": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "traffic": {
-          "type": "object",
-          "properties": {
-            "spike_pattern": { "$ref": "#/definitions/answered_item" },
-            "peak_tps": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "database": {
-          "type": "object",
-          "properties": {
-            "existing_db": { "$ref": "#/definitions/answered_item" },
-            "migration_required": { "$ref": "#/definitions/answered_item" },
-            "data_volume": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "network": {
-          "type": "object",
-          "properties": {
-            "multi_region": { "$ref": "#/definitions/answered_item" },
-            "on_premises_connection": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "security": {
-          "type": "object",
-          "properties": {
-            "auth_method": { "$ref": "#/definitions/answered_item" },
-            "compliance": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "availability": {
-          "type": "object",
-          "properties": {
-            "sla_target": { "$ref": "#/definitions/answered_item" },
-            "dr_requirement": { "$ref": "#/definitions/answered_item" },
-            "backup_policy": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "performance": {
-          "type": "object",
-          "properties": {
-            "latency_requirement": { "$ref": "#/definitions/answered_item" },
-            "throughput_requirement": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "operations": {
-          "type": "object",
-          "properties": {
-            "monitoring": { "$ref": "#/definitions/answered_item" },
-            "log_retention": { "$ref": "#/definitions/answered_item" }
-          }
-        },
-        "budget_schedule": {
-          "type": "object",
-          "properties": {
-            "cost_constraint": { "$ref": "#/definitions/answered_item" },
-            "demo_deadline": { "$ref": "#/definitions/answered_item" }
-          }
-        }
-      }
-    }
-  },
-  "definitions": {
-    "answered_item": {
-      "type": "object",
-      "required": ["value", "source"],
-      "properties": {
-        "value": {
-          "description": "回答の値（選択値 or 自由入力テキスト）"
-        },
-        "source": {
-          "type": "string",
-          "enum": ["user_selected", "user_free_text", "estimated", "not_answered"],
-          "description": "値の出所"
-        },
-        "estimation": {
-          "type": "object",
-          "description": "source が estimated の場合のみ",
-          "properties": {
-            "confidence_label": {
-              "type": "string",
-              "enum": ["public_reference", "general_estimate"],
-              "description": "MVP段階の信頼度ラベル。チーム展開時に internal_record を追加"
-            },
-            "reasoning": {
-              "type": "string",
-              "description": "推測の根拠説明"
-            },
-            "source_info": {
-              "type": "string",
-              "description": "参照元の情報（URLや公開事例の説明等）"
-            }
-          }
-        }
-      }
-    }
-  }
-}
+SessionStatus = Literal["in_progress", "completed"]
 ```
 
-### 3.2 セッションデータモデル
+**制約**:
+- `id` はセッション作成時にUUID v4で自動生成
+- `status` が `"completed"` の場合、`hearing_result` は必須
+- `answers` のキーはヒアリング質問定義の `question_id` と一致する
+
+**永続化ステータスとワークフロー状態の関係**:
+
+`SessionStatus` は永続化モデル上のステータスであり、2値（`"in_progress"` / `"completed"`）のみ。
+状態遷移図（後述）に示す `Created` → `Hearing` → `HearingCompleted` → `Designing` → ... の各状態は、セッション内のデータ（`answers` の有無、`hearing_result` の有無、`architecture` の有無等）から論理的に導出される **ワークフロー状態** である。永続化されるのは `status` フィールドのみ。
+
+| ワークフロー状態 | 永続化 status | 導出条件 |
+|----------------|-------------|---------|
+| Created | in_progress | answers == {} |
+| Hearing | in_progress | answers != {} かつ hearing_result == None |
+| HearingCompleted | completed | hearing_result != None かつ architecture == None |
+| Designing | completed | architecture != None かつ validation_results == None |
+| Validated | completed | architecture.validation_results != None |
+| Building / Deployed / ... | completed | 外部リソース状態による（Terraform state等） |
+
+### エンティティ: Answer（ヒアリング回答）
+
+```python
+@dataclass
+class Answer:
+    question_id: str                 # 質問ID
+    value: str | list[str]           # 回答値（テキストまたは複数選択）
+    answered_at: datetime            # 回答日時（UTC）
+```
+
+### エンティティ: HearingResult（ヒアリング結果）
+
+```python
+@dataclass
+class HearingResult:
+    session_id: str                  # セッションID
+    summary: str                     # 要件サマリー（Markdown）
+    requirements: list[Requirement]  # 構造化された要件リスト
+    constraints: list[str]           # 制約事項
+    completed_at: datetime           # 完了日時（UTC）
+
+@dataclass
+class Requirement:
+    category: str                    # "compute" | "database" | "network" | "security" | "other"
+    description: str                 # 要件の説明
+    priority: str                    # "must" | "should" | "could"
+```
+
+### エンティティ: Architecture（アーキテクチャ）
+
+```python
+@dataclass
+class Architecture:
+    session_id: str                          # セッションID
+    components: list[Component]              # コンポーネント一覧
+    connections: list[Connection]            # コンポーネント間の接続
+    validation_results: list[ValidationResult] | None  # 最新のバリデーション結果
+    created_at: datetime                     # 作成日時（UTC）
+    updated_at: datetime                     # 更新日時（UTC）
+
+@dataclass
+class Component:
+    id: str                          # コンポーネントID（UUID v4）
+    service_type: str                # OCIサービス種別（例: "oke", "adb", "apigateway"）
+    display_name: str                # 表示名
+    config: dict[str, Any]           # サービス固有の設定（シェイプ、ネットワーク等）
+    customizable: bool               # カスタマイズ可能フラグ（デフォルト: True）
+
+@dataclass
+class Connection:
+    source_id: str                   # 接続元コンポーネントID
+    target_id: str                   # 接続先コンポーネントID
+    connection_type: str             # "private_endpoint" | "public" | "service_gateway" | "vcn_peering"
+    description: str                 # 接続の説明
+```
+
+**制約**:
+- `connections` の `source_id` / `target_id` は `components` 内の `id` と一致する
+- `service_type` はバリデーションルールで定義されたサービス一覧に含まれる
+
+### エンティティ: ValidationResult（バリデーション結果）
+
+```python
+@dataclass
+class ValidationResult:
+    severity: str                    # "error" | "warning" | "info"
+    rule_id: str                     # バリデーションルールID
+    message: str                     # 問題の説明
+    affected_components: list[str]   # 影響を受けるコンポーネントID
+    recommendation: str              # 推奨する対応
+```
+
+### エンティティ: Template（アプリケーションテンプレート）
+
+```python
+@dataclass
+class TemplateMetadata:
+    name: str                        # テンプレート名（例: "rest-api-adb"）
+    display_name: str                # 表示名（例: "REST API + Autonomous Database"）
+    description: str                 # テンプレートの説明
+    parameters: list[TemplateParameter]  # カスタマイズ可能なパラメータ
+    protected_paths: list[str]       # カスタマイズ不可のファイルパスパターン
+
+@dataclass
+class TemplateParameter:
+    name: str                        # パラメータ名
+    description: str                 # パラメータの説明
+    param_type: str                  # "string" | "number" | "boolean" | "choice"
+    required: bool                   # 必須フラグ
+    default: Any | None              # デフォルト値
+    choices: list[str] | None        # param_type="choice" の場合の選択肢
+```
+
+### エンティティ: TerraformResult（Terraform実行結果）
+
+```python
+@dataclass
+class TerraformResult:
+    success: bool                    # 実行成功フラグ
+    command: str                     # 実行コマンド（"plan" | "apply" | "destroy"）
+    stdout: str                      # 標準出力
+    stderr: str                      # 標準エラー出力
+    exit_code: int                   # 終了コード
+    plan_summary: str | None         # plan時のサマリー（例: "3 to add, 0 to change"）
+```
+
+### エンティティ: RMStack / RMJob（Resource Manager関連）
+
+```python
+@dataclass
+class RMStack:
+    id: str                          # Resource ManagerスタックOCID
+    compartment_id: str              # コンパートメントOCID
+    display_name: str                # 表示名
+    terraform_version: str           # Terraformバージョン
+    lifecycle_state: str             # "ACTIVE" | "DELETED" 等
+    created_at: datetime             # 作成日時（UTC）
+
+@dataclass
+class RMJob:
+    id: str                          # ジョブOCID
+    stack_id: str                    # スタックOCID
+    operation: str                   # "PLAN" | "APPLY" | "DESTROY"
+    lifecycle_state: str             # "ACCEPTED" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED"
+    log_location: str | None         # ログの格納先
+
+RMJobStatus = Literal["ACCEPTED", "IN_PROGRESS", "SUCCEEDED", "FAILED", "CANCELING", "CANCELED"]
+```
+
+### エンティティ: CLIResult / DeployResult / AppStatus（操作結果）
+
+```python
+@dataclass
+class CLIResult:
+    success: bool                    # 実行成功フラグ
+    stdout: str                      # 標準出力（JSON文字列の場合あり）
+    stderr: str                      # 標準エラー出力
+    exit_code: int                   # 終了コード
+
+@dataclass
+class DeployResult:
+    success: bool                    # デプロイ成功フラグ
+    image_uri: str | None            # デプロイしたコンテナイメージURI
+    endpoint: str | None             # アクセスエンドポイント
+    rolled_back: bool                # 自動ロールバック実行フラグ
+    reason: str | None               # 失敗時の理由
+
+@dataclass
+class AppStatus:
+    session_id: str                  # セッションID
+    status: str                      # "not_deployed" | "deploying" | "running" | "failed"
+    endpoint: str | None             # アクセスエンドポイント
+    health_check: dict | None        # 直近のヘルスチェック結果
+    last_deployed_at: datetime | None  # 最終デプロイ日時（UTC）
+```
+
+### ER図
 
 ```mermaid
 erDiagram
-    Session ||--|| HearingResult : contains
-    Session ||--o| ArchitectureOutput : generates
-    Session {
-        string session_id PK
+    SESSION ||--o{ ANSWER : contains
+    SESSION ||--o| HEARING_RESULT : produces
+    SESSION ||--o| ARCHITECTURE : has
+    ARCHITECTURE ||--o{ COMPONENT : contains
+    ARCHITECTURE ||--o{ CONNECTION : contains
+    ARCHITECTURE ||--o{ VALIDATION_RESULT : has
+    CONNECTION }o--|| COMPONENT : "source"
+    CONNECTION }o--|| COMPONENT : "target"
+
+    SESSION {
+        string id PK
+        string status
         datetime created_at
         datetime updated_at
-        string status "in_progress | completed"
-        string project_description
     }
-    HearingResult {
-        string hearing_id PK
-        string session_id FK
-        json project_overview
-        json requirements
-    }
-    ArchitectureOutput {
-        string output_id PK
-        string session_id FK
-        json requirements_summary
-        string mermaid_diagram
-        json iac_files
-        json component_decisions
-        json warnings
-    }
-    HearingResult ||--|{ Answer : has
-    Answer {
-        string answer_id PK
-        string hearing_id FK
-        string question_id
-        string category
+    ANSWER {
+        string question_id PK
         string value
-        string source "user_selected | estimated | not_answered"
-        json estimation "nullable"
+        datetime answered_at
+    }
+    HEARING_RESULT {
+        string session_id FK
+        string summary
+        datetime completed_at
+    }
+    ARCHITECTURE {
+        string session_id FK
+        datetime created_at
+        datetime updated_at
+    }
+    COMPONENT {
+        string id PK
+        string service_type
+        string display_name
+        json config
+    }
+    CONNECTION {
+        string source_id FK
+        string target_id FK
+        string connection_type
+    }
+    VALIDATION_RESULT {
+        string rule_id
+        string severity
+        string message
     }
 ```
 
-### 3.3 ローカルファイルシステム構造
+**注**: ER図はデータの論理的な関係を示す。実際の永続化ではAnswerはSession.answers辞書内に格納されるため、独立したsession_id FKは持たない（親Sessionのキーにより暗黙的に関連付けられる）。
 
-```
-~/.galley/                          ... Galleyのデータディレクトリ
-  config/
-    hearing-questions.yaml          ... 質問カテゴリテンプレート
-    hearing-flow.yaml               ... ヒアリングフロー進行ルール
-    oci-services.yaml               ... OCIサービスカタログ
-  sessions/
-    {session_id}/
-      session.json                  ... セッションメタデータ
-      hearing-result.json           ... ヒアリング結果
-      architecture.json             ... アーキテクチャ設計結果
-  output/
-    {session_id}/
-      summary.md                    ... 要件サマリー
-      architecture.mmd              ... 構成図（Mermaid）
-      terraform/
-        main.tf                     ... メインテンプレート
-        variables.tf                ... 変数定義
-        outputs.tf                  ... アウトプット定義
+## コンポーネント設計
+
+### MCPサーバー層
+
+**責務**:
+- FastMCPによるMCPプロトコルの処理（SSE / StreamableHTTP）
+- MCPツール・リソース・プロンプトの登録と呼び出しルーティング
+- リクエストの認証情報検証（API Gatewayで処理済み前提）
+
+```python
+class GalleyServer:
+    """FastMCPベースのMCPサーバー。各サービスのツールを登録・公開する。"""
+    def __init__(self, config: ServerConfig): ...
+    def register_tools(self) -> None: ...
+    def register_resources(self) -> None: ...
+    def register_prompts(self) -> None: ...
+    async def run(self) -> None: ...
 ```
 
----
+**依存関係**:
+- FastMCP
+- 各サービス層のクラス
 
-## 4. Prompt設計
+### ヒアリングサービス
 
-### 4.1 start-hearing プロンプト
+**責務**:
+- ヒアリングセッションのライフサイクル管理（作成→回答保存→完了）
+- ヒアリング質問定義の読み込みとフロー制御
+- 回答の構造化と要件への変換
 
-ヒアリング開始時にAIクライアントに渡されるプロンプト。AIクライアント（LLM）の振る舞いを定義する。
-
-```markdown
-# Galley ヒアリングアシスタント
-
-あなたはOCIのプリセールスエンジニア向けヒアリングアシスタントです。
-ユーザーから案件の概要を受け取り、選択式の質問を通じて要件を具体化してください。
-
-## 進行ルール
-
-1. 質問テンプレート（Resources: galley://templates/hearing-questions）を参照し、
-   カテゴリ順に質問を進めてください
-2. 各質問は番号付き選択肢で提示してください。最後の選択肢は必ず「わからない」にしてください
-3. 選択肢はユーザーの案件概要と前の回答に応じて動的に調整してください
-4. 「わからない」が選ばれた場合:
-   - あなた自身の知識から推測値と根拠を提示してください
-   - 根拠には信頼度ラベル（📄 公開事例 / 💡 一般推計）を付けてください
-   - 根拠が見つからない場合は正直にその旨を伝えてください
-   - ユーザーに「この仮定で進めるか」確認してください
-5. 各回答は save_answer ツールで必ず保存してください
-6. 全質問完了後、complete_hearing ツールを呼んでください
-
-## 出力例（質問）
-
-Q3. セール時など急激なスパイクはありますか？
-  1. はい、予測可能なタイミングで
-  2. はい、予測不可能
-  3. いいえ
-  4. わからない
-
-番号で回答してください。自由記述も可能です。
-
-## 案件概要
-
-{{project_description}}
+```python
+class HearingService:
+    """ヒアリングセッションの管理とフロー制御を行う。"""
+    def __init__(self, storage: StorageService, config: HearingConfig): ...
+    async def create_session(self) -> Session: ...
+    async def save_answer(self, session_id: str, question_id: str, value: str | list[str]) -> Answer: ...
+    async def save_answers_batch(self, session_id: str, answers: list[dict]) -> list[Answer]: ...
+    async def complete_hearing(self, session_id: str) -> HearingResult: ...
+    async def get_hearing_result(self, session_id: str) -> HearingResult: ...
 ```
 
-### 4.2 generate-architecture プロンプト
+**依存関係**:
+- StorageService
 
-アーキテクチャ生成時にAIクライアントに渡されるプロンプト。
+### 設計サービス
 
-```markdown
-# Galley アーキテクチャジェネレーター
+**責務**:
+- 自動設計モード：ヒアリング結果からの推奨アーキテクチャ生成
+- 対話型設計モード：コンポーネントの追加・削除・設定変更
+- アーキテクチャバリデーション（Object Storageのルールに基づく）
+- エクスポート機能（Markdown、Mermaid、IaC）
 
-ヒアリング結果に基づいて、OCIのアーキテクチャを設計してください。
-
-## 設計ルール
-
-1. OCIサービスカタログ（Resources: galley://references/oci-services）を参照し、
-   適切なサービスを選定してください
-2. 各コンポーネントの選定理由を明記してください
-3. 以下のカテゴリで構成してください:
-   - コンピュート、データベース、ネットワーク、セキュリティ・認証、
-     ストレージ、監視・運用
-4. アンチパターンを検出した場合は警告してください:
-   - 単一障害点、セキュリティグループの全開放、バックアップ未設定 等
-5. 設計結果は save_architecture ツールで保存してください
-
-## 出力形式
-
-### 1. 要件サマリー
-確定事項（✅）、推測に基づく仮定（🔶）、未確認（⚠️）の3区分で整理
-
-### 2. アーキテクチャ概要
-各コンポーネントの選定理由を表形式で
-
-### 3. 構成図
-Mermaid記法で出力 → export_mermaid ツールでファイル保存
-
-### 4. IaCテンプレート
-Terraform（OCI Provider）形式 → export_iac ツールでファイル保存
-
-### 5. 警告・推奨事項
-アンチパターンや未確認項目に基づく注意点
+```python
+class DesignService:
+    """アーキテクチャ設計の管理とバリデーションを行う。"""
+    def __init__(self, storage: StorageService, validator: ArchitectureValidator): ...
+    async def save_architecture(self, session_id: str, architecture: Architecture) -> Architecture: ...
+    async def add_component(self, session_id: str, service_type: str, display_name: str, config: dict) -> Component: ...
+    async def remove_component(self, session_id: str, component_id: str) -> None: ...
+    async def configure_component(self, session_id: str, component_id: str, config: dict) -> Component: ...
+    async def validate_architecture(self, session_id: str) -> list[ValidationResult]: ...
+    async def list_available_services(self) -> list[ServiceInfo]: ...
+    async def export_summary(self, session_id: str) -> str: ...
+    async def export_mermaid(self, session_id: str) -> str: ...
+    async def export_iac(self, session_id: str) -> str: ...
+    async def export_all(self, session_id: str) -> dict[str, str]: ...
 ```
 
----
+**依存関係**:
+- StorageService
+- ArchitectureValidator
 
-## 5. エラーハンドリング
+### アーキテクチャバリデーター
 
-### 5.1 エラー分類と対応
+**責務**:
+- Object Storageからバリデーションルールを読み込み
+- アーキテクチャ構成に対するルール適用
+- バリデーション結果の生成
 
-| エラー種別 | 発生箇所 | 対応 |
-|-----------|---------|------|
-| セッションが見つからない | galley-hearing | エラーメッセージを返す。AIクライアントがユーザーに伝える |
-| ファイル書き込み失敗 | 両サーバー | エラーメッセージを返す。ディスク容量・権限の確認を促す |
-| JSONバリデーションエラー | galley-hearing | 不正なフィールドを示すエラーメッセージを返す |
-| セッションディレクトリ容量超過 | 両サーバー | 古いセッションの削除を促すメッセージを返す |
+```python
+class ArchitectureValidator:
+    """バリデーションルールに基づくアーキテクチャ検証を行う。"""
+    def __init__(self, storage: StorageService): ...
+    async def load_rules(self) -> list[ValidationRule]: ...
+    async def validate(self, architecture: Architecture) -> list[ValidationResult]: ...
+```
 
-### 5.2 MCPサーバーの設計方針
+### インフラサービス
 
-- MCPサーバーはデータ層に徹し、エラーは呼び出し元（AIクライアント）に返す
-- AIクライアント（LLM）がエラーメッセージをユーザーに適切に伝達する
-- ファイルI/Oのエラーは具体的な原因（パーミッション、ディスク容量等）を含める
+**責務**:
+- Galleyコンテナ内でのTerraform実行（plan / apply / destroy）
+- OCI CLIコマンドの実行
+- OCI SDK for Pythonによる構造化API呼び出し
+- Resource Managerスタックの管理
+
+```python
+class InfraService:
+    """インフラストラクチャの構築・管理を行う。"""
+    def __init__(self, storage: StorageService, oci_client: OCIClientFactory): ...
+    async def run_terraform_plan(self, session_id: str, terraform_dir: str) -> TerraformResult: ...
+    async def run_terraform_apply(self, session_id: str, terraform_dir: str) -> TerraformResult: ...
+    async def run_terraform_destroy(self, session_id: str, terraform_dir: str) -> TerraformResult: ...
+    async def run_oci_cli(self, command: str) -> CLIResult: ...
+    async def oci_sdk_call(self, service: str, operation: str, params: dict) -> dict: ...
+    async def create_rm_stack(self, session_id: str, compartment_id: str, terraform_dir: str) -> RMStack: ...
+    async def run_rm_plan(self, stack_id: str) -> RMJob: ...
+    async def run_rm_apply(self, stack_id: str) -> RMJob: ...
+    async def get_rm_job_status(self, job_id: str) -> RMJobStatus: ...
+```
+
+**依存関係**:
+- StorageService
+- OCIClientFactory
+
+### アプリケーションサービス
+
+**責務**:
+- テンプレートストアの管理とテンプレート一覧取得
+- テンプレートからのプロジェクトスキャフォールディング
+- アプリケーションコードのカスタマイズ
+- ビルド・デプロイパイプラインのオーケストレーション
+- デプロイ状態の監視と自動ロールバック
+
+```python
+class AppService:
+    """アプリケーションのテンプレート管理・デプロイを行う。"""
+    def __init__(self, storage: StorageService, oci_client: OCIClientFactory): ...
+    async def list_templates(self) -> list[TemplateMetadata]: ...
+    async def scaffold_from_template(self, session_id: str, template_name: str, params: dict) -> str: ...
+    async def update_app_code(self, session_id: str, file_path: str, new_content: str) -> None: ...
+    async def build_and_deploy(self, session_id: str) -> DeployResult: ...
+    async def check_app_status(self, session_id: str) -> AppStatus: ...
+```
+
+**依存関係**:
+- StorageService
+- OCIClientFactory
+
+### 配布Terraformサービス（F3）
+
+**責務**:
+- Galley環境自体のプロビジョニング用Terraformの管理
+- `deploy/` ディレクトリ内のTerraformファイル生成・更新
+- `terraform apply` で作成されるリソース: API Gateway、Container Instance、Object Storage、VCN/Subnet、IAM Policy
+- URLトークンの自動生成とTerraform output経由の出力
+
+**構成ファイル（`deploy/` ディレクトリ）**:
+
+| ファイル | 役割 |
+|---------|------|
+| `main.tf` | プロバイダー設定、変数参照 |
+| `variables.tf` | 入力変数（compartment_id、region等） |
+| `outputs.tf` | 出力値（MCPエンドポイントURL、URLトークン等） |
+| `api-gateway.tf` | API GatewayとDeployment |
+| `container-instance.tf` | Container Instance（Galleyサーバー） |
+| `object-storage.tf` | Object Storageバケット |
+| `network.tf` | VCN / Subnet / Security List |
+| `iam.tf` | Dynamic Group / IAM Policy |
+
+**注意**: F3はGalley MCPサーバーの機能ではなく、利用者がGalley環境を構築するためのTerraformコードである。MCPサーバーのコードとは独立して管理される。利用者は `deploy/` ディレクトリの `terraform apply` を実行することでGalley環境を構築できる。
+
+### ストレージサービス
+
+**責務**:
+- OCI Object Storageへのデータ読み書き
+- セッションデータ、Terraform state、テンプレート、バリデーションルールの管理
+- スナップショットの保存とロールバック
+
+```python
+class StorageService:
+    """OCI Object Storageを利用したデータ永続化層。"""
+    def __init__(self, oci_client: OCIClientFactory, bucket_name: str, namespace: str): ...
+    async def put_object(self, key: str, data: bytes) -> None: ...
+    async def get_object(self, key: str) -> bytes: ...
+    async def list_objects(self, prefix: str) -> list[str]: ...
+    async def delete_object(self, key: str) -> None: ...
+    async def save_session(self, session: Session) -> None: ...
+    async def load_session(self, session_id: str) -> Session: ...
+    async def save_snapshot(self, session_id: str, label: str) -> str: ...
+    async def restore_snapshot(self, session_id: str, snapshot_id: str) -> None: ...
+```
+
+**依存関係**:
+- OCIClientFactory（OCI SDK for Python の Object Storage クライアント）
+
+### OCIクライアントファクトリ
+
+**責務**:
+- Resource Principal認証の初期化
+- 各OCIサービスクライアントの生成と管理
+
+```python
+class OCIClientFactory:
+    """Resource Principal認証に基づくOCIクライアントの生成と管理。"""
+    def __init__(self): ...
+    def get_object_storage_client(self) -> oci.object_storage.ObjectStorageClient: ...
+    def get_resource_manager_client(self) -> oci.resource_manager.ResourceManagerClient: ...
+    def get_container_instances_client(self) -> oci.container_instances.ContainerInstanceClient: ...
+    def get_identity_client(self) -> oci.identity.IdentityClient: ...
+```
+
+## ユースケース図
+
+### UC1: ヒアリング〜自動設計フロー
+
+```mermaid
+sequenceDiagram
+    participant User as MCPホスト（LLM）
+    participant MCP as Galley MCPサーバー
+    participant Hearing as ヒアリングサービス
+    participant Design as 設計サービス
+    participant Storage as Object Storage
+
+    User->>MCP: galley:create_session
+    MCP->>Hearing: create_session()
+    Hearing->>Storage: save_session(session)
+    Storage-->>Hearing: 成功
+    Hearing-->>MCP: Session(id, status="in_progress")
+    MCP-->>User: セッションID
+
+    loop 質問ごとに繰り返し
+        User->>MCP: galley:save_answer(session_id, question_id, value)
+        MCP->>Hearing: save_answer(...)
+        Hearing->>Storage: save_session(updated)
+        Hearing-->>MCP: Answer
+        MCP-->>User: 保存完了
+    end
+
+    User->>MCP: galley:complete_hearing(session_id)
+    MCP->>Hearing: complete_hearing(session_id)
+    Hearing->>Storage: save_session(completed)
+    Hearing-->>MCP: HearingResult
+    MCP-->>User: ヒアリング結果
+
+    Note over User: LLMがヒアリング結果を分析し<br/>推奨アーキテクチャを生成
+
+    User->>MCP: galley:save_architecture(session_id, architecture)
+    MCP->>Design: save_architecture(...)
+    Design->>Storage: save_session(with architecture)
+    Design-->>MCP: Architecture
+    MCP-->>User: アーキテクチャ保存完了
+```
+
+### UC2: 対話型設計フロー
+
+```mermaid
+sequenceDiagram
+    participant User as MCPホスト（LLM）
+    participant MCP as Galley MCPサーバー
+    participant Design as 設計サービス
+    participant Validator as アーキテクチャバリデーター
+    participant Storage as Object Storage
+
+    User->>MCP: galley:list_available_services
+    MCP->>Design: list_available_services()
+    Design->>Storage: load(oci-services.yaml)
+    Design-->>MCP: サービス一覧
+    MCP-->>User: 利用可能なOCIサービス
+
+    User->>MCP: galley:add_component(session_id, "oke", "本番OKE", config)
+    MCP->>Design: add_component(...)
+    Design->>Storage: save_session(updated)
+    Design-->>MCP: Component
+    MCP-->>User: コンポーネント追加完了
+
+    User->>MCP: galley:add_component(session_id, "adb", "分析用ADB", config)
+    MCP->>Design: add_component(...)
+    Design-->>MCP: Component
+    MCP-->>User: コンポーネント追加完了
+
+    User->>MCP: galley:validate_architecture(session_id)
+    MCP->>Design: validate_architecture(session_id)
+    Design->>Validator: validate(architecture)
+    Validator->>Storage: load_rules()
+    Validator-->>Design: [ValidationResult(warning: "Private Endpoint必要")]
+    Design-->>MCP: バリデーション結果
+    MCP-->>User: "OKEからADBにPrivate Endpointが必要です"
+
+    User->>MCP: galley:configure_component(session_id, adb_id, {endpoint: "private"})
+    MCP->>Design: configure_component(...)
+    Design-->>MCP: 更新済みComponent
+    MCP-->>User: 設定変更完了
+```
+
+### UC3: Terraform自動デバッグループ
+
+```mermaid
+sequenceDiagram
+    participant User as MCPホスト（LLM）
+    participant MCP as Galley MCPサーバー
+    participant Infra as インフラサービス
+    participant TF as Terraform
+    participant Storage as Object Storage
+
+    Note over User: LLMがアーキテクチャから<br/>Terraformコードを生成
+
+    User->>MCP: galley:export_iac(session_id)
+    MCP-->>User: Terraformファイル
+
+    User->>MCP: galley:run_terraform_plan(session_id, terraform_dir)
+    MCP->>Infra: run_terraform_plan(...)
+    Infra->>TF: terraform plan
+    TF-->>Infra: エラー（例: shape制約違反）
+    Infra-->>MCP: TerraformResult(success=false, error="...")
+    MCP-->>User: エラー詳細
+
+    Note over User: LLMがエラーを分析し<br/>Terraformコードを修正
+
+    User->>MCP: galley:run_terraform_plan(session_id, terraform_dir)
+    MCP->>Infra: run_terraform_plan(...)
+    Infra->>TF: terraform plan
+    TF-->>Infra: 成功（3 to add, 0 to change）
+    Infra-->>MCP: TerraformResult(success=true, plan_summary="...")
+    MCP-->>User: Plan成功
+
+    User->>MCP: galley:run_terraform_apply(session_id, terraform_dir)
+    MCP->>Infra: run_terraform_apply(...)
+    Infra->>TF: terraform apply -auto-approve
+    Infra->>Storage: save terraform.tfstate
+    TF-->>Infra: Apply complete
+    Infra-->>MCP: TerraformResult(success=true)
+    MCP-->>User: Apply完了
+```
+
+### UC4: テンプレートデプロイフロー
+
+```mermaid
+sequenceDiagram
+    participant User as MCPホスト（LLM）
+    participant MCP as Galley MCPサーバー
+    participant App as アプリケーションサービス
+    participant Storage as Object Storage
+    participant DevOps as OCI DevOps
+    participant OCIR as Container Registry
+    participant OKE as OKE Cluster
+
+    User->>MCP: galley:list_templates
+    MCP->>App: list_templates()
+    App->>Storage: list_objects("templates/")
+    App-->>MCP: テンプレート一覧
+    MCP-->>User: 利用可能なテンプレート
+
+    User->>MCP: galley:scaffold_from_template(session_id, "rest-api-adb", params)
+    MCP->>App: scaffold_from_template(...)
+    App->>Storage: get_object("templates/rest-api-adb/")
+    App->>Storage: save(generated project)
+    App-->>MCP: プロジェクトパス
+    MCP-->>User: スキャフォールド完了
+
+    User->>MCP: galley:update_app_code(session_id, "src/api/routes.py", new_content)
+    MCP->>App: update_app_code(...)
+    App->>Storage: save_snapshot(session_id, "pre-customization")
+    App->>Storage: save(updated code)
+    App-->>MCP: 更新完了
+    MCP-->>User: コード更新完了
+
+    User->>MCP: galley:build_and_deploy(session_id)
+    MCP->>App: build_and_deploy(...)
+    App->>DevOps: ビルドパイプライン実行
+    DevOps->>OCIR: イメージpush
+    App->>OKE: kubectl apply
+    App->>App: ヘルスチェック実行
+    alt ヘルスチェック成功
+        App-->>MCP: DeployResult(success=true)
+        MCP-->>User: デプロイ成功
+    else ヘルスチェック失敗
+        App->>Storage: restore_snapshot(session_id, "pre-customization")
+        App->>OKE: kubectl rollback
+        App-->>MCP: DeployResult(success=false, rolled_back=true)
+        MCP-->>User: デプロイ失敗（自動ロールバック済み）
+    end
+```
+
+## 状態遷移図
+
+### セッションの状態遷移
+
+```mermaid
+stateDiagram-v2
+    [*] --> Created: create_session
+    Created --> Hearing: save_answer
+    Hearing --> Hearing: save_answer / save_answers_batch
+    Hearing --> HearingCompleted: complete_hearing
+    HearingCompleted --> Designing: save_architecture / add_component
+    Designing --> Designing: add/remove/configure_component
+    Designing --> Validated: validate_architecture
+    Validated --> Designing: add/remove/configure_component
+    Validated --> Exported: export_*
+    Designing --> Building: run_terraform_plan
+    Building --> Building: run_terraform_plan (retry)
+    Building --> Deployed: run_terraform_apply
+    Deployed --> AppDeploy: scaffold_from_template
+    AppDeploy --> AppDeploy: update_app_code
+    AppDeploy --> Running: build_and_deploy (成功)
+    AppDeploy --> AppDeploy: build_and_deploy (失敗 → ロールバック)
+    Deployed --> Destroyed: run_terraform_destroy
+    Running --> Destroyed: run_terraform_destroy
+```
+
+## Object Storageデータ構造
+
+```
+galley-bucket/
+├── sessions/
+│   └── {session_id}/
+│       ├── session.json           # セッションメタデータ
+│       ├── hearing-result.json    # ヒアリング結果
+│       ├── architecture.json      # アーキテクチャ定義
+│       ├── terraform/             # 生成されたTerraformファイル
+│       │   ├── main.tf
+│       │   ├── variables.tf
+│       │   └── terraform.tfstate
+│       ├── app/                   # アプリケーションコード
+│       │   └── ...
+│       └── snapshots/             # スナップショット
+│           └── {snapshot_id}/
+│               └── ...
+├── templates/
+│   ├── rest-api-adb/
+│   │   ├── template.json          # テンプレートメタデータ
+│   │   ├── app/                   # アプリケーションコード
+│   │   ├── k8s/                   # Kubernetesマニフェスト
+│   │   └── terraform/             # インフラ定義
+│   ├── frontend-oke/
+│   └── fn-event-driven/
+├── rules/
+│   ├── connection-requirements.yaml  # サービス間接続要件
+│   ├── region-availability.yaml      # リージョン別可用性
+│   ├── shape-constraints.yaml        # シェイプ制約
+│   └── network-best-practices.yaml   # ネットワークベストプラクティス
+└── services/
+    └── oci-services.yaml             # 利用可能なOCIサービス定義
+```
+
+### session.json の例
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "in_progress",
+  "answers": {
+    "purpose": {
+      "question_id": "purpose",
+      "value": "REST APIとデータベースを使ったWebアプリケーション",
+      "answered_at": "2026-02-17T10:30:00Z"
+    }
+  },
+  "hearing_result": null,
+  "architecture": null,
+  "created_at": "2026-02-17T10:00:00Z",
+  "updated_at": "2026-02-17T10:30:00Z"
+}
+```
+
+### バリデーションルールの例（connection-requirements.yaml）
+
+```yaml
+rules:
+  - id: "oke-adb-private-endpoint"
+    description: "OKEからAutonomous Databaseへの接続にはPrivate Endpointが必要"
+    severity: "error"
+    condition:
+      source_service: "oke"
+      target_service: "adb"
+    requirement:
+      target_config:
+        endpoint_type: "private"
+    recommendation: "ADBのネットワーク設定をPrivate Endpointに変更してください"
+
+  - id: "compute-adb-same-vcn"
+    description: "ComputeインスタンスとADBは同一VCN内に配置を推奨"
+    severity: "warning"
+    condition:
+      source_service: "compute"
+      target_service: "adb"
+    requirement:
+      same_vcn: true
+    recommendation: "同一VCN内に配置することでレイテンシを削減できます"
+```
+
+## 主要MCPツールの入出力スキーマ
+
+### ヒアリング系ツール
+
+| ツール名 | 入力パラメータ | 出力 |
+|---------|-------------|------|
+| `galley:create_session` | なし | `{session_id: str, status: str}` |
+| `galley:save_answer` | `session_id: str, question_id: str, value: str \| list[str]` | `{question_id: str, value: str \| list[str], answered_at: str}` |
+| `galley:save_answers_batch` | `session_id: str, answers: list[{question_id, value}]` | `{saved_count: int, answers: list[Answer]}` |
+| `galley:complete_hearing` | `session_id: str` | `{session_id: str, summary: str, requirements: list, constraints: list}` |
+| `galley:get_hearing_result` | `session_id: str` | `HearingResult` のJSON表現 |
+
+### 設計系ツール
+
+| ツール名 | 入力パラメータ | 出力 |
+|---------|-------------|------|
+| `galley:list_available_services` | なし | `{services: list[{service_type, display_name, description, config_schema}]}` |
+| `galley:save_architecture` | `session_id: str, architecture: dict` | `Architecture` のJSON表現 |
+| `galley:add_component` | `session_id: str, service_type: str, display_name: str, config: dict` | `Component` のJSON表現 |
+| `galley:remove_component` | `session_id: str, component_id: str` | `{success: true}` |
+| `galley:configure_component` | `session_id: str, component_id: str, config: dict` | 更新済み `Component` のJSON表現 |
+| `galley:validate_architecture` | `session_id: str` | `{results: list[ValidationResult], error_count: int, warning_count: int}` |
+
+### エクスポート系ツール
+
+| ツール名 | 入力パラメータ | 出力 |
+|---------|-------------|------|
+| `galley:export_summary` | `session_id: str` | `{markdown: str}` |
+| `galley:export_mermaid` | `session_id: str` | `{mermaid: str}` |
+| `galley:export_iac` | `session_id: str` | `{terraform_files: dict[filename, content]}` |
+| `galley:export_all` | `session_id: str` | `{summary: str, mermaid: str, terraform_files: dict}` |
+
+### インフラ系ツール
+
+| ツール名 | 入力パラメータ | 出力 |
+|---------|-------------|------|
+| `galley:run_terraform_plan` | `session_id: str, terraform_dir: str` | `TerraformResult` のJSON表現 |
+| `galley:run_terraform_apply` | `session_id: str, terraform_dir: str` | `TerraformResult` のJSON表現 |
+| `galley:run_terraform_destroy` | `session_id: str, terraform_dir: str` | `TerraformResult` のJSON表現 |
+| `galley:run_oci_cli` | `command: str` | `CLIResult` のJSON表現 |
+| `galley:oci_sdk_call` | `service: str, operation: str, params: dict` | OCI SDKのレスポンスJSON |
+
+### アプリケーション系ツール
+
+| ツール名 | 入力パラメータ | 出力 |
+|---------|-------------|------|
+| `galley:list_templates` | なし | `{templates: list[TemplateMetadata]}` |
+| `galley:scaffold_from_template` | `session_id: str, template_name: str, params: dict` | `{project_path: str, files: list[str]}` |
+| `galley:update_app_code` | `session_id: str, file_path: str, new_content: str` | `{success: true, snapshot_id: str}` |
+| `galley:build_and_deploy` | `session_id: str` | `DeployResult` のJSON表現 |
+| `galley:check_app_status` | `session_id: str` | `AppStatus` のJSON表現 |
+
+**エラー時の共通形式**: すべてのツールはエラー時に `{"error": "<エラー種別>", "message": "<詳細>"}` 形式で返却する。
+
+## パフォーマンス最適化
+
+- **Object Storageアクセスの最小化**: セッションデータはメモリにキャッシュし、変更時のみ書き込む
+- **Terraform実行の非同期化**: `run_terraform_plan` / `run_terraform_apply` はサブプロセスで非同期実行し、進捗をストリーミング返却
+- **バリデーションルールのキャッシュ**: 起動時にObject Storageからルールを読み込み、メモリにキャッシュ（TTL: 10分）
+- **テンプレートメタデータのキャッシュ**: `list_templates` 呼び出し時にメタデータをキャッシュ（TTL: 5分）
+
+## セキュリティ考慮事項
+
+- **Resource Principal認証の厳格化**: Dynamic Groupの一致ルールをContainer InstanceのOCIDで限定
+- **IAM Policyの最小権限**: `galley_work_compartment_id` 内のリソースに対してのみ操作権限を付与
+- **OCI CLIコマンドのサニタイズ**: `run_oci_cli` に渡されるコマンドをホワイトリスト方式で検証し、シェルインジェクションを防止
+- **Terraform実行の分離**: 各セッションのTerraform実行ディレクトリを分離し、セッション間の干渉を防止
+- **テンプレートのコア保護**: `template.json` の `protected_paths` で指定されたファイルへの `update_app_code` を拒否
+
+## エラーハンドリング
+
+### エラーの分類
+
+| エラー種別 | 処理 | LLMへの返却 |
+|-----------|------|------------|
+| セッション不在 | 処理中断 | `{"error": "session_not_found", "message": "Session {id} not found"}` |
+| バリデーションエラー | 処理中断、詳細を返却 | `{"error": "validation_failed", "details": [...]}` |
+| Terraform実行エラー | エラー詳細を返却（LLMが修正判断） | `{"error": "terraform_error", "stderr": "...", "exit_code": 1}` |
+| OCI API エラー | OCI SDKのエラー詳細を構造化して返却 | `{"error": "oci_api_error", "service": "...", "status": 404, "code": "NotFound"}` |
+| Object Storageエラー | リトライ（最大3回）後にエラー返却 | `{"error": "storage_error", "message": "..."}` |
+| テンプレート不在 | 処理中断、利用可能テンプレート一覧を返却 | `{"error": "template_not_found", "available": [...]}` |
+| 保護ファイル変更 | 処理中断 | `{"error": "protected_file", "path": "...", "message": "This file is protected"}` |
+| デプロイ失敗 | 自動ロールバック実行 | `{"error": "deploy_failed", "rolled_back": true, "reason": "..."}` |
+
+## テスト戦略
+
+### ユニットテスト
+- HearingService: セッション作成、回答保存、ヒアリング完了の各操作
+- DesignService: コンポーネント追加・削除・設定変更
+- ArchitectureValidator: 各バリデーションルールの適用結果
+- StorageService: Object Storageへの読み書き（モック使用）
+
+### 統合テスト
+- ヒアリング〜設計〜エクスポートの一連のフロー
+- MCPプロトコルを介したツール呼び出し（FastMCPのテストユーティリティ使用）
+- Terraform plan/applyの実行（テスト用の軽量リソースで検証）
+
+### E2Eテスト
+- MCPホストからの接続〜ヒアリング〜設計〜Terraform apply〜destroyの完全なフロー
+- テンプレートデプロイ〜ヘルスチェック〜ロールバックのフロー
+- API Gatewayを経由したURLトークン認証の検証

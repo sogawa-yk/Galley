@@ -1,0 +1,41 @@
+rules:
+  - id: "oke-adb-private-endpoint"
+    description: "OKEからAutonomous Databaseへの接続にはPrivate Endpointが必要"
+    severity: "error"
+    condition:
+      source_service: "oke"
+      target_service: "adb"
+    requirement:
+      target_config:
+        endpoint_type: "private"
+    recommendation: "ADBのネットワーク設定をPrivate Endpointに変更してください"
+
+  - id: "compute-adb-same-vcn"
+    description: "ComputeインスタンスとADBは同一VCN内に配置を推奨"
+    severity: "warning"
+    condition:
+      source_service: "compute"
+      target_service: "adb"
+    requirement:
+      same_vcn: true
+    recommendation: "同一VCN内に配置することでレイテンシを削減できます"
+
+  - id: "oke-loadbalancer-recommended"
+    description: "OKEクラスターにはLoad Balancerの配置を推奨"
+    severity: "warning"
+    condition:
+      source_service: "loadbalancer"
+      target_service: "oke"
+    requirement:
+      exists: true
+    recommendation: "OKEクラスターの前段にLoad Balancerを配置することを推奨します"
+
+  - id: "apigateway-functions-connection"
+    description: "API GatewayからFunctionsへの接続はサポートされている"
+    severity: "info"
+    condition:
+      source_service: "apigateway"
+      target_service: "functions"
+    requirement:
+      supported: true
+    recommendation: "API GatewayのバックエンドとしてFunctionsを利用できます"

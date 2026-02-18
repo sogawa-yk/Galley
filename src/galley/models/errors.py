@@ -1,0 +1,49 @@
+"""Galleyのカスタム例外クラス。"""
+
+
+class GalleyError(Exception):
+    """Galleyの基底例外クラス。"""
+
+
+class SessionNotFoundError(GalleyError):
+    """セッションが見つからない場合の例外。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Session not found: {session_id}")
+        self.session_id = session_id
+
+
+class HearingNotCompletedError(GalleyError):
+    """ヒアリングが未完了の場合の例外。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Hearing not completed for session: {session_id}")
+        self.session_id = session_id
+
+
+class HearingAlreadyCompletedError(GalleyError):
+    """ヒアリングが既に完了している場合の例外。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Hearing already completed for session: {session_id}")
+        self.session_id = session_id
+
+
+class ArchitectureNotFoundError(GalleyError):
+    """セッションにアーキテクチャが未設定の場合の例外。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Architecture not found for session: {session_id}")
+        self.session_id = session_id
+
+
+class ComponentNotFoundError(GalleyError):
+    """指定されたコンポーネントが見つからない場合の例外。"""
+
+    def __init__(self, component_id: str) -> None:
+        super().__init__(f"Component not found: {component_id}")
+        self.component_id = component_id
+
+
+class StorageError(GalleyError):
+    """ストレージ操作のエラー。"""

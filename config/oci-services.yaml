@@ -1,150 +1,127 @@
-version: "1.0.0"
 services:
-  - name: Compute
-    category: コンピュート
-    description: 仮想マシンインスタンス（VM）
-    use_cases:
-      - Webサーバー
-      - アプリケーションサーバー
-      - バッチ処理
-    constraints:
-      - Flexシェイプ推奨（コスト最適化）
+  - service_type: oke
+    display_name: "Oracle Kubernetes Engine (OKE)"
+    description: "マネージドKubernetesサービス。コンテナ化されたアプリケーションのデプロイ・管理に使用。"
+    config_schema:
+      shape:
+        type: choice
+        choices: ["VM.Standard.E4.Flex", "VM.Standard.A1.Flex", "VM.Standard3.Flex"]
+        default: "VM.Standard.E4.Flex"
+      node_count:
+        type: number
+        default: 3
+      kubernetes_version:
+        type: string
+        default: "v1.28"
 
-  - name: Container Engine for Kubernetes (OKE)
-    category: コンピュート
-    description: マネージドKubernetesサービス
-    use_cases:
-      - コンテナオーケストレーション
-      - マイクロサービス
-    constraints:
-      - ノードプール最小3ノード推奨
+  - service_type: adb
+    display_name: "Autonomous Database (ADB)"
+    description: "フルマネージドデータベースサービス。ATP（トランザクション処理）またはADW（データウェアハウス）として利用。"
+    config_schema:
+      workload_type:
+        type: choice
+        choices: ["ATP", "ADW"]
+        default: "ATP"
+      cpu_core_count:
+        type: number
+        default: 1
+      storage_in_tbs:
+        type: number
+        default: 1
+      endpoint_type:
+        type: choice
+        choices: ["public", "private"]
+        default: "private"
 
-  - name: Functions
-    category: コンピュート
-    description: サーバーレス関数実行環境
-    use_cases:
-      - イベント駆動処理
-      - 軽量API
+  - service_type: compute
+    display_name: "Compute Instance"
+    description: "仮想マシンインスタンス。汎用的なワークロードの実行に使用。"
+    config_schema:
+      shape:
+        type: choice
+        choices: ["VM.Standard.E4.Flex", "VM.Standard.A1.Flex", "VM.Standard3.Flex"]
+        default: "VM.Standard.E4.Flex"
+      ocpus:
+        type: number
+        default: 1
+      memory_in_gbs:
+        type: number
+        default: 16
+      image_os:
+        type: choice
+        choices: ["Oracle Linux 8", "Oracle Linux 9", "Ubuntu 22.04"]
+        default: "Oracle Linux 8"
 
-  - name: Autonomous Database
-    category: データベース
-    description: 自律型データベース（ATP/ADW）
-    use_cases:
-      - OLTP/OLAP
-      - JSON Document Store
-    constraints:
-      - Always Free枠あり
+  - service_type: apigateway
+    display_name: "API Gateway"
+    description: "マネージドAPIゲートウェイ。RESTful APIの公開・管理・セキュリティに使用。"
+    config_schema:
+      endpoint_type:
+        type: choice
+        choices: ["public", "private"]
+        default: "public"
 
-  - name: MySQL Database Service
-    category: データベース
-    description: マネージドMySQLサービス
-    use_cases:
-      - MySQL互換アプリケーション
-      - WordPress等のCMS
+  - service_type: functions
+    display_name: "OCI Functions"
+    description: "サーバーレスファンクション。イベント駆動型の処理に使用。"
+    config_schema:
+      memory_in_mbs:
+        type: choice
+        choices: [128, 256, 512, 1024]
+        default: 256
+      timeout_in_seconds:
+        type: number
+        default: 30
 
-  - name: NoSQL Database
-    category: データベース
-    description: キーバリュー/ドキュメントストア
-    use_cases:
-      - IoTデータ
-      - セッション管理
+  - service_type: objectstorage
+    display_name: "Object Storage"
+    description: "スケーラブルなオブジェクトストレージ。ファイル・データの格納に使用。"
+    config_schema:
+      storage_tier:
+        type: choice
+        choices: ["Standard", "Archive"]
+        default: "Standard"
+      versioning:
+        type: choice
+        choices: ["Enabled", "Disabled"]
+        default: "Disabled"
 
-  - name: Virtual Cloud Network (VCN)
-    category: ネットワーク
-    description: 仮想クラウドネットワーク
-    use_cases:
-      - ネットワーク分離
-      - サブネット設計
+  - service_type: vcn
+    display_name: "Virtual Cloud Network (VCN)"
+    description: "仮想クラウドネットワーク。ネットワーク基盤として使用。"
+    config_schema:
+      cidr_block:
+        type: string
+        default: "10.0.0.0/16"
 
-  - name: Load Balancer
-    category: ネットワーク
-    description: L7ロードバランサー
-    use_cases:
-      - HTTP/HTTPS負荷分散
-      - SSLターミネーション
+  - service_type: loadbalancer
+    display_name: "Load Balancer"
+    description: "L7ロードバランサー。トラフィック分散に使用。"
+    config_schema:
+      shape:
+        type: choice
+        choices: ["flexible", "100Mbps", "400Mbps"]
+        default: "flexible"
+      is_private:
+        type: choice
+        choices: [true, false]
+        default: false
 
-  - name: API Gateway
-    category: ネットワーク
-    description: APIマネジメントサービス
-    use_cases:
-      - REST API公開
-      - 認証・レート制限
+  - service_type: streaming
+    display_name: "Streaming"
+    description: "マネージドメッセージストリーミングサービス。リアルタイムデータ処理に使用。"
+    config_schema:
+      partitions:
+        type: number
+        default: 1
+      retention_in_hours:
+        type: number
+        default: 24
 
-  - name: FastConnect
-    category: ネットワーク
-    description: 専用線接続サービス
-    use_cases:
-      - オンプレミス接続
-      - 低レイテンシ通信
-
-  - name: Identity and Access Management (IAM)
-    category: セキュリティ
-    description: 認証・認可サービス
-    use_cases:
-      - ユーザー管理
-      - ポリシーベースアクセス制御
-
-  - name: Vault
-    category: セキュリティ
-    description: 鍵管理・シークレット管理サービス
-    use_cases:
-      - 暗号鍵管理
-      - シークレット保管
-
-  - name: Web Application Firewall (WAF)
-    category: セキュリティ
-    description: Webアプリケーションファイアウォール
-    use_cases:
-      - DDoS防御
-      - OWASP Top 10対策
-
-  - name: Object Storage
-    category: ストレージ
-    description: オブジェクトストレージ
-    use_cases:
-      - 静的ファイル保存
-      - バックアップ
-    constraints:
-      - Standard/Archive/Infrequent Accessの3ティア
-
-  - name: Block Volume
-    category: ストレージ
-    description: ブロックストレージ
-    use_cases:
-      - VMのデータディスク
-      - データベースストレージ
-
-  - name: File Storage
-    category: ストレージ
-    description: NFSファイルストレージ
-    use_cases:
-      - 共有ファイルシステム
-      - コンテナ永続ボリューム
-
-  - name: Monitoring
-    category: 監視・運用
-    description: メトリクス監視サービス
-    use_cases:
-      - リソース監視
-      - アラート設定
-
-  - name: Logging
-    category: 監視・運用
-    description: ログ管理サービス
-    use_cases:
-      - アプリケーションログ
-      - 監査ログ
-
-  - name: Notifications
-    category: 監視・運用
-    description: 通知サービス
-    use_cases:
-      - アラート通知
-      - イベント通知
-
-  - name: Container Registry (OCIR)
-    category: コンピュート
-    description: コンテナイメージレジストリ
-    use_cases:
-      - Dockerイメージ管理
-      - CI/CDパイプライン
+  - service_type: nosql
+    display_name: "NoSQL Database"
+    description: "マネージドNoSQLデータベース。低レイテンシのキーバリュー・ドキュメント操作に使用。"
+    config_schema:
+      table_limits:
+        type: string
+        default: "maxReadUnits=50,maxWriteUnits=50,maxStorageInGBs=25"

@@ -1,51 +1,66 @@
-version: "1.0.0"
-categories:
-  - id: project_overview
-    label: 案件概要
+questions:
+  - id: purpose
+    text: "このシステムの主な目的は何ですか？"
+    category: other
     required: true
-    description: 業種、案件の種類（新規構築/移行/モダナイゼーション）
+    type: text
 
-  - id: scale
-    label: 規模
+  - id: users
+    text: "想定するユーザー数はどの程度ですか？"
+    category: compute
     required: true
-    description: 想定ユーザー数、同時接続数
+    type: text
 
-  - id: traffic
-    label: トラフィック特性
+  - id: workload_type
+    text: "ワークロードの種類を選択してください。"
+    category: compute
     required: true
-    description: スパイクの有無・予測可能性
+    type: choice
+    choices:
+      - "Webアプリケーション"
+      - "バッチ処理"
+      - "API サービス"
+      - "データ分析"
+      - "その他"
 
-  - id: database
-    label: データベース
+  - id: database_required
+    text: "データベースは必要ですか？必要な場合、種類を教えてください。"
+    category: database
     required: true
-    description: 既存DB、移行要件、データ量
+    type: text
 
-  - id: network
-    label: ネットワーク
-    required: true
-    description: マルチリージョン、オンプレ接続、VPN/専用線
-
-  - id: security
-    label: セキュリティ・認証
-    required: true
-    description: 認証方式、コンプライアンス要件
-
-  - id: availability
-    label: 可用性・DR
-    required: true
-    description: SLA目標、DR要件、バックアップ方針
-
-  - id: performance
-    label: パフォーマンス
+  - id: network_requirements
+    text: "ネットワーク要件を教えてください（例: パブリックアクセス、プライベートのみ、VPN接続等）。"
+    category: network
     required: false
-    description: レイテンシ要件、スループット要件（規模に依存）
+    type: text
 
-  - id: operations
-    label: 運用・監視
+  - id: security_requirements
+    text: "セキュリティ要件を教えてください（例: 暗号化、認証方式、コンプライアンス要件等）。"
+    category: security
     required: false
-    description: ログ管理、監視要件、ログ保持期間
+    type: text
 
-  - id: budget_schedule
-    label: 予算・スケジュール
-    required: true
-    description: コスト制約、デモ期限
+  - id: availability_requirements
+    text: "可用性要件を教えてください（例: SLA目標、DR要件等）。"
+    category: compute
+    required: false
+    type: text
+
+  - id: budget_constraints
+    text: "予算上の制約はありますか？"
+    category: other
+    required: false
+    type: text
+
+  - id: timeline
+    text: "構築のタイムラインを教えてください。"
+    category: other
+    required: false
+    type: text
+
+  - id: additional_notes
+    text: "その他、考慮すべき事項があれば教えてください。"
+    category: other
+    required: false
+    type: text

@@ -1,8 +1,15 @@
-# ビルド成果物
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
 dist/
+build/
+*.egg
 
-# 依存パッケージ
-node_modules/
+# 仮想環境
+.venv/
+venv/
 
 # ランタイムデータ（ローカルテスト用）
 .galley/
@@ -15,6 +22,26 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# 環境変数（将来の拡張用）
+# 環境変数
 .env
 .env.local
+
+# Terraform
+deploy/.terraform/
+deploy/.terraform.lock.hcl
+deploy/terraform.tfstate
+deploy/terraform.tfstate.backup
+deploy/terraform.tfvars
+deploy/*.tfvars
+deploy/.terraform.tfstate.lock.info
+
+# テスト・カバレッジ
+.coverage
+htmlcov/
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/

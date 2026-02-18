@@ -1,266 +1,575 @@
-# ユビキタス言語定義（Glossary）
+# プロジェクト用語集 (Glossary)
 
-本ドキュメントは、Galleyプロジェクトで使用する用語を統一的に定義する。ドキュメント、コード、会話のすべてにおいて、ここで定義された用語と意味を一貫して使用する。
+## 概要
 
----
+このドキュメントは、Galleyプロジェクト内で使用される用語の定義を管理します。
 
-## 1. プロダクト
+**更新日**: 2026-02-17
 
-| 日本語 | 英語 | 定義 |
-|-------|------|------|
-| Galley（ゲラ） | Galley | 本プロダクトの名称。OCIプリセールスエンジニア向けのAI支援MCPサーバー。印刷用語で「校正刷り」を意味し、本番前の試作版を素早く作り上げるプロセスがプリセールスのデモ作成と重なることに由来する |
+## ドメイン用語
 
----
+### Galley
 
-## 2. ドメイン用語
+**定義**: Python + FastMCPで実装するOCIプリセールス支援MCPサーバー
 
-### 2.1 ビジネスドメイン
+**説明**: 利用者はClaude Desktop等のMCPホストからGalleyに接続し、要件のヒアリングからアーキテクチャ設計、インフラ構築、アプリケーションデプロイまでを一貫して行える。
 
-| 日本語 | 英語 | 定義 | コード上の命名 |
-|-------|------|------|--------------|
-| プリセールスエンジニア | Presales Engineer | 自社クラウドベンダーに所属する技術営業。顧客向けにアーキテクチャ提案やデモ環境構築を行う。Galleyのターゲットユーザー | — |
-| 案件 | Project | 顧客向けの提案・デモ準備の一単位。1案件につき1セッションを作成する | `project_description` |
-| デモ | Demo | 顧客に提示するクラウドアーキテクチャの設計成果物。MVP段階ではドキュメント（構成図・IaCテンプレート）を指す。実環境のデプロイは含まない | — |
-| 業種 | Industry | 顧客の業種分類（製造業、金融、小売等） | `industry` |
-| 案件種別 | Project Type | 案件の技術的分類（新規構築、マイグレーション、モダナイゼーション等） | `project_type` |
-| ナレッジストア | Knowledge Store | 社内の過去案件データやナレッジを蓄積・検索するための共有データベース。Phase 2以降で導入予定。MVP段階では未対応 | — |
+**関連用語**: [MCPサーバー](#mcpサーバー)、[MCPホスト](#mcpホスト)
 
-### 2.2 ヒアリングドメイン
+**使用例**:
+- 「Galleyに接続して検証環境を構築する」
+- 「GalleyのMCPツールを使ってヒアリングを開始する」
 
-| 日本語 | 英語 | 定義 | コード上の命名 |
-|-------|------|------|--------------|
-| ヒアリング | Hearing | AIクライアントを通じて行う選択式の要件聞き取りプロセス。8〜12問で構成される | `hearing` |
-| セッション | Session | 1案件に対する1回のヒアリング〜生成の作業単位。UUID で識別される | `Session`、`session_id` |
-| 質問テンプレート | Hearing Questions | ヒアリングで使用する質問カテゴリと選択肢の定義。YAMLファイルで管理される | `hearing-questions.yaml` |
-| フロー定義 | Hearing Flow | ヒアリングの進行順序と分岐条件の定義 | `hearing-flow.yaml` |
-| 質問カテゴリ | Question Category | ヒアリングの質問を分類するグループ。案件概要、規模、トラフィック等の10カテゴリで構成（下記 2.3 参照） | `category` |
-| 回答 | Answer | ヒアリングの各質問に対するユーザーの応答。選択、自由入力、推測、未回答のいずれか | `save_answer`、`AnsweredItem` |
-| ヒアリング結果 | Hearing Result | ヒアリングで収集した全回答の構造化データ。アーキテクチャ生成の入力となる | `HearingResult` |
-| 案件概要 | Project Description | ユーザーが最初に入力する案件の自然言語テキスト。ヒアリングの出発点 | `project_description` |
+**英語表記**: Galley
 
-### 2.3 質問カテゴリとデータフィールドの対応
+### セッション
 
-| # | カテゴリ（日本語） | カテゴリ（英語） | requirementsフィールド | 含まれるフィールド |
-|---|-----------------|----------------|---------------------|------------------|
-| Q1 | 案件概要 | Project Overview | `project_overview` | `description`、`industry`、`project_type` |
-| Q2 | 規模 | Scale | `requirements.scale` | `concurrent_users`、`total_users` |
-| Q3 | トラフィック特性 | Traffic | `requirements.traffic` | `spike_pattern`、`peak_tps` |
-| Q4 | データベース | Database | `requirements.database` | `existing_db`、`migration_required`、`data_volume` |
-| Q5 | ネットワーク | Network | `requirements.network` | `multi_region`、`on_premises_connection` |
-| Q6 | セキュリティ・認証 | Security | `requirements.security` | `auth_method`、`compliance` |
-| Q7 | 可用性・DR | Availability | `requirements.availability` | `sla_target`、`dr_requirement`、`backup_policy` |
-| Q8 | パフォーマンス | Performance | `requirements.performance` | `latency_requirement`、`throughput_requirement` |
-| Q9 | 運用・監視 | Operations | `requirements.operations` | `monitoring`、`log_retention` |
-| Q10 | 予算・スケジュール | Budget & Schedule | `requirements.budget_schedule` | `cost_constraint`、`demo_deadline` |
+**定義**: ヒアリングから設計・構築までの一連の作業を管理する単位
 
-### 2.4 推測ドメイン
+**説明**: `galley:create_session` で作成され、ヒアリング回答、ヒアリング結果、アーキテクチャ、Terraformファイル、アプリケーションコード等のデータを保持する。セッションIDで一意に識別される。
 
-| 日本語 | 英語 | 定義 | コード上の命名 |
-|-------|------|------|--------------|
-| 推測 | Estimation | ユーザーが「わからない」と回答した項目に対し、AIが生成する仮の値と根拠 | `Estimation`、`estimation` |
-| 推測値 | Estimated Value | AIが提示する仮の回答値 | `value`（`source: "estimated"` の場合） |
-| 推測根拠 | Reasoning | 推測値の理由説明 | `reasoning` |
-| 参照元情報 | Source Info | 推測根拠の出典（URL、公開事例の説明等） | `source_info` |
-| 信頼度ラベル | Confidence Label | 推測根拠の出典分類。下記3種類 | `ConfidenceLabel`、`confidence_label` |
-| 公開事例 | Public Reference | 公開情報（リファレンスアーキテクチャ、事例記事等）に基づく推測 | `"public_reference"` |
-| 一般推計 | General Estimate | 業界の一般的なベストプラクティスに基づく推測 | `"general_estimate"` |
-| 社内実績 | Internal Record | 社内の過去案件データに基づく推測（MVP段階では未対応） | `"internal_record"` |
+**関連用語**: [ヒアリング](#ヒアリング)、[アーキテクチャ](#アーキテクチャ)
 
-### 2.5 生成ドメイン
+**使用例**:
+- 「新しいセッションを作成する」
+- 「セッションIDを指定してヒアリング結果を取得する」
 
-| 日本語 | 英語 | 定義 | コード上の命名 |
-|-------|------|------|--------------|
-| アーキテクチャ | Architecture | ヒアリング結果に基づいて設計されたクラウドインフラ構成 | `ArchitectureOutput` |
-| コンポーネント | Component | アーキテクチャを構成する個々のクラウドサービス要素 | `Component`、`components` |
-| 選定理由 | Component Decision | 各コンポーネントを採用した技術的根拠 | `ComponentDecision`、`decisions` |
-| 警告 | Warning | アーキテクチャ設計で検出されたアンチパターンや未確認リスク | `Warning`、`warnings` |
-| アンチパターン | Anti-pattern | 避けるべき設計パターン（単一障害点、セキュリティグループの全開放等） | — |
-| 要件サマリー | Requirements Summary | 確定事項（✅）、推測（🔶）、未確認（⚠️）の3区分で整理した要件一覧 | `export_summary` |
-| 構成図 | Architecture Diagram | Mermaid記法で記述されたクラウド構成の図 | `export_mermaid`、`.mmd` |
-| IaCテンプレート | IaC Template | Terraform（OCI Provider）形式のインフラ定義コード | `export_iac`、`.tf` |
+**英語表記**: Session
 
-### 2.6 回答の出所（Source）
+### ヒアリング
 
-| 日本語 | 英語 | 定義 | コード上の値 |
-|-------|------|------|------------|
-| ユーザー選択 | User Selected | ユーザーが番号選択肢から回答した | `"user_selected"` |
-| ユーザー自由入力 | User Free Text | ユーザーが自由テキストで回答した | `"user_free_text"` |
-| 推測 | Estimated | AIが推測し、ユーザーが承認した | `"estimated"` |
-| 未回答 | Not Answered | 回答されなかった項目 | `"not_answered"` |
+**定義**: 利用者の要件を対話的に聞き出し、構造化するプロセス
 
-### 2.7 セッションステータス
+**説明**: ヒアリングフロー定義に従って質問を提示し、回答を保存する。完了時に要件を構造化した「ヒアリング結果」を生成する。
 
-| 日本語 | 英語 | 定義 | コード上の値 |
-|-------|------|------|------------|
-| 進行中 | In Progress | ヒアリングまたは生成が進行中。回答の追加・変更が可能 | `"in_progress"` |
-| 完了 | Completed | ヒアリングが完了し、結果が確定している。回答の追加は不可 | `"completed"` |
+**関連用語**: [セッション](#セッション)、[ヒアリング結果](#ヒアリング結果)
 
----
+**使用例**:
+- 「ヒアリングを開始する」
+- 「ヒアリングの回答を保存する」
+- 「ヒアリングを完了して結果を取得する」
 
-## 3. MCPプロトコル用語
+**英語表記**: Hearing
 
-### 3.1 基本概念
+### ヒアリング結果
 
-| 用語 | 定義 | Galleyでの使い方 |
-|------|------|----------------|
-| MCP (Model Context Protocol) | AIクライアントとサーバー間の通信プロトコル。Anthropicが策定 | GalleyはMCPサーバーとして実装される |
-| MCPサーバー | MCPプロトコルに従ってResources/Tools/Promptsを提供するプロセス | `galley-mcp` パッケージ |
-| AIクライアント | MCPサーバーに接続してLLMの機能を提供するアプリケーション | Claude Desktop、ChatGPT等。ユーザーが選択 |
-| Resources | AIクライアントにコンテキストを提供する読み取り専用データ | 質問テンプレート、OCIサービスカタログ、セッションデータ |
-| Tools | AIクライアントが呼び出すアクション（副作用を伴う操作） | セッション作成、回答保存、ファイル出力等 |
-| Prompts | 再利用可能なプロンプトテンプレート。AIクライアントに対するLLMの振る舞い指示 | ヒアリング開始、アーキテクチャ生成 |
-| stdioトランスポート | 標準入出力（stdin/stdout）を通じたJSON-RPC通信 | GalleyのMCPサーバーが使用する通信方式 |
-| ケーパビリティ | Capabilities | MCPサーバーが初期化時にクライアントに宣言する機能一覧（Resources、Tools、Prompts、Logging等） |
-| listChanged | Resourceリストの変更をクライアントに通知する機能 | セッション作成・削除時に通知 |
+**定義**: ヒアリング完了後に生成される構造化された要件情報
 
-### 3.2 Galleyが提供するTools
+**説明**: 要件サマリー、構造化された要件リスト（カテゴリ・優先度付き）、制約事項を含む。自動設計モードのインプットとして使用される。
 
-| Tool名 | 所属モジュール | 概要 |
-|--------|-------------|------|
-| `create_session` | hearing | 新規セッションを作成 |
-| `save_answer` | hearing | 回答を1件保存 |
-| `save_answers_batch` | hearing | 回答を一括保存（Tool呼び出し回数の削減用） |
-| `complete_hearing` | hearing | ヒアリングを完了にする |
-| `get_hearing_result` | hearing | ヒアリング結果を取得 |
-| `list_sessions` | hearing | セッション一覧を取得 |
-| `delete_session` | hearing | セッションを削除 |
-| `save_architecture` | generate | アーキテクチャ設計を保存 |
-| `export_summary` | generate | 要件サマリーをMarkdownファイルに出力 |
-| `export_mermaid` | generate | 構成図をMermaidファイルに出力 |
-| `export_iac` | generate | IaCテンプレートをファイルに出力 |
-| `export_all` | generate | 全成果物を一括出力 |
+**関連用語**: [ヒアリング](#ヒアリング)、[自動設計モード](#自動設計モード)
 
-### 3.3 Galleyが提供するPrompts
+**英語表記**: Hearing Result
 
-| Prompt名 | 所属モジュール | 概要 |
-|----------|-------------|------|
-| `start-hearing` | hearing | ヒアリングを開始するプロンプト |
-| `resume-hearing` | hearing | 中断したヒアリングを再開するプロンプト |
-| `generate-architecture` | generate | ヒアリング結果からアーキテクチャを生成するプロンプト |
+### アーキテクチャ
 
-### 3.4 Galleyが提供するResources
+**定義**: OCIサービスのコンポーネント構成と接続関係を定義したもの
 
-| Resource URI | 所属モジュール | 概要 |
-|-------------|-------------|------|
-| `galley://templates/hearing-questions` | hearing | 質問カテゴリテンプレート |
-| `galley://templates/hearing-flow` | hearing | ヒアリングフロー進行ルール |
-| `galley://schemas/hearing-result` | hearing | ヒアリング結果JSONスキーマ |
-| `galley://sessions` | hearing | 保存済みセッション一覧 |
-| `galley://sessions/{session_id}` | hearing | 特定セッションの詳細データ |
-| `galley://references/oci-services` | generate | OCIサービスカタログ |
-| `galley://references/oci-architectures` | generate | OCIリファレンスアーキテクチャ集 |
-| `galley://references/oci-terraform` | generate | OCI Terraform Providerリソース一覧 |
+**説明**: コンポーネント（OCIサービス）の一覧、コンポーネント間の接続関係、各コンポーネントの設定を保持する。自動設計モードまたは対話型設計モードで作成される。
 
----
+**関連用語**: [コンポーネント](#コンポーネント)、[接続](#接続)、[バリデーション](#バリデーション)
 
-## 4. 技術用語
+**使用例**:
+- 「アーキテクチャにOKEコンポーネントを追加する」
+- 「アーキテクチャをバリデーションする」
+- 「アーキテクチャをMermaid形式でエクスポートする」
 
-### 4.1 OCI（Oracle Cloud Infrastructure）
+**英語表記**: Architecture
 
-| 用語 | 定義 | Galleyでの使い方 |
-|------|------|----------------|
-| OCI | Oracle社が提供するクラウドプラットフォーム | Galleyが対象とするクラウド基盤 |
-| OCIサービスカタログ | OCI主要20サービスの名称・用途・制約をまとめたリファレンス | `config/oci-services.yaml` として提供 |
-| リファレンスアーキテクチャ | 業種・ユースケース別の推奨構成パターン | `config/oci-architectures.yaml` として提供 |
-| OCI Terraform Provider | TerraformでOCIリソースを管理するためのプラグイン | IaCテンプレート生成時にリソース名を参照。`config/oci-terraform.yaml` |
+### コンポーネント
 
-### 4.2 外部ツール・フォーマット
+**定義**: アーキテクチャを構成するOCIサービスの単位
 
-| 用語 | 定義 | Galleyでの使い方 |
-|------|------|----------------|
-| Terraform | HashiCorp社のIaCツール。HCL（HashiCorp Configuration Language）で記述 | アーキテクチャ生成結果のIaCテンプレート出力形式 |
-| Mermaid | テキストベースのダイアグラム記法。Markdownに埋め込み可能 | アーキテクチャ構成図の出力形式（`.mmd` ファイル） |
-| Zod | TypeScript向けのスキーマ宣言・バリデーションライブラリ | Tool引数、JSON/YAML設定ファイルのランタイムバリデーション |
-| MCP Inspector | MCP公式のデバッグツール。ブラウザUIでResources/Tools/Promptsを操作できる | 統合テストに使用 |
+**説明**: サービス種別（例: oke, adb, apigateway）、表示名、サービス固有の設定を持つ。コンポーネントIDで一意に識別される。
 
-### 4.3 内部アーキテクチャ
+**関連用語**: [アーキテクチャ](#アーキテクチャ)、[接続](#接続)
 
-| 用語 | 定義 | 備考 |
-|------|------|------|
-| hearingモジュール | ヒアリングフローの状態管理とデータ永続化を担当する内部モジュール | functional-design.md では「galley-hearing サーバー」と表記。実装は単一MCPサーバー内の内部モジュール |
-| generateモジュール | アーキテクチャ設計結果の保存とファイル出力を担当する内部モジュール | functional-design.md では「galley-generate サーバー」と表記。実装は単一MCPサーバー内の内部モジュール |
-| coreモジュール | ファイルI/O、設定読み込み、バリデーション、ログ出力等の共通基盤 | hearingとgenerateの両方が依存する最下層モジュール |
-| アトミック書き込み | 一時ファイルへの書き込み→renameによる安全なファイル更新手法 | プロセス中断時のデータ破損を防止。`core/storage.ts` で実装 |
-| データディレクトリ | Galleyのランタイムデータを保存するディレクトリ | `~/.galley/`（`--data-dir` で変更可能） |
+**使用例**:
+- 「OKEコンポーネントを追加する」
+- 「ADBコンポーネントの設定をPrivate Endpointに変更する」
 
----
+**英語表記**: Component
 
-## 5. 略語一覧
+### 接続
 
-| 略語 | 正式名称 | 日本語 |
-|------|---------|--------|
-| MCP | Model Context Protocol | モデルコンテキストプロトコル |
-| OCI | Oracle Cloud Infrastructure | オラクルクラウドインフラストラクチャ |
-| IaC | Infrastructure as Code | インフラストラクチャ・アズ・コード |
-| MVP | Minimum Viable Product | 実用最小限の製品 |
-| LLM | Large Language Model | 大規模言語モデル |
-| SDK | Software Development Kit | ソフトウェア開発キット |
-| ESM | ECMAScript Modules | ECMAScriptモジュール |
-| JSON-RPC | JSON Remote Procedure Call | JSONリモートプロシージャコール |
-| UUID | Universally Unique Identifier | 汎用一意識別子 |
-| SLA | Service Level Agreement | サービスレベル合意 |
-| DR | Disaster Recovery | 災害復旧 |
-| TPS | Transactions Per Second | 秒間トランザクション数 |
-| VCN | Virtual Cloud Network | 仮想クラウドネットワーク（OCI） |
-| OKE | Oracle Container Engine for Kubernetes | OCIのKubernetesサービス |
-| IAM | Identity and Access Management | アイデンティティ・アクセス管理 |
-| WAF | Web Application Firewall | ウェブアプリケーションファイアウォール |
-| HCL | HashiCorp Configuration Language | HashiCorp設定言語（Terraformの記述言語） |
-| YAML | YAML Ain't Markup Language | 設定ファイル記述言語 |
+**定義**: アーキテクチャ内のコンポーネント間の通信経路
 
----
+**説明**: 接続元・接続先のコンポーネントID、接続種別（private_endpoint、public、service_gateway、vcn_peering）を持つ。バリデーション時に接続要件のチェック対象となる。
 
-## 6. コード上の型名マッピング
+**関連用語**: [コンポーネント](#コンポーネント)、[バリデーション](#バリデーション)
 
-ドメイン概念とTypeScript型名の対応一覧。
+**英語表記**: Connection
 
-### 6.1 ヒアリング関連（`src/types/hearing.ts`）
+### バリデーション
 
-| ドメイン概念 | TypeScript型 | 説明 |
-|------------|-------------|------|
-| ヒアリング結果 | `HearingResult` | ヒアリング全体の構造化データ。`metadata` + `project_overview` + `requirements` |
-| 回答項目 | `AnsweredItem` | 個々の質問に対する回答。`value` + `source` + `estimation?` |
-| 推測情報 | `Estimation` | 推測の詳細。`confidence_label` + `reasoning` + `source_info` |
-| 信頼度ラベル | `ConfidenceLabel` | `"public_reference" \| "general_estimate"` （将来 `"internal_record"` を追加） |
-| 回答の出所 | `AnswerSource` | `"user_selected" \| "user_free_text" \| "estimated" \| "not_answered"` |
+**定義**: アーキテクチャ構成がOCI固有の制約やベストプラクティスに準拠しているかを検証するプロセス
 
-### 6.2 セッション関連（`src/types/session.ts`）
+**説明**: Object Storage上のバリデーションルール（YAML）に基づいてアーキテクチャを検証し、エラー・警告・情報の3段階で結果を返す。
 
-| ドメイン概念 | TypeScript型 | 説明 |
-|------------|-------------|------|
-| セッション | `Session` | セッションのメタデータ。`session_id` + `status` + `project_description` + タイムスタンプ |
-| セッションステータス | `SessionStatus` | `"in_progress" \| "completed"` |
+**関連用語**: [アーキテクチャ](#アーキテクチャ)、[バリデーションルール](#バリデーションルール)
 
-### 6.3 アーキテクチャ関連（`src/types/architecture.ts`）
+**使用例**:
+- 「アーキテクチャのバリデーションを実行する」
+- 「バリデーション結果に従ってPrivate Endpointを設定する」
 
-| ドメイン概念 | TypeScript型 | 説明 |
-|------------|-------------|------|
-| アーキテクチャ出力 | `ArchitectureOutput` | 設計結果全体。コンポーネント + 選定理由 + 警告 |
-| コンポーネント | `Component` | 個々のクラウドサービス要素 |
-| コンポーネント選定理由 | `ComponentDecision` | 選定の技術的根拠 |
-| 警告 | `Warning` | アンチパターン検出・未確認リスク |
+**英語表記**: Validation
 
-### 6.4 エラー関連（`src/core/errors.ts`）
+### バリデーションルール
 
-| ドメイン概念 | TypeScript型 | 説明 |
-|------------|-------------|------|
-| エラー | `GalleyError` | アプリケーション固有のエラークラス |
-| エラーコード | `GalleyErrorCode` | `"SESSION_NOT_FOUND"` 等のエラー種別 |
+**定義**: アーキテクチャ検証に使用するOCI固有の制約知識をデータとして定義したもの
 
----
+**説明**: サービス間の接続要件、リージョン別サービス可用性、シェイプ制約、ネットワークベストプラクティスなどをYAML形式で管理。開発者が随時追加・更新可能。
 
-## 7. 用語使い分けガイド
+**関連用語**: [バリデーション](#バリデーション)
 
-### 紛らわしい用語の整理
+**英語表記**: Validation Rule
 
-| 混同しやすい用語 | Galleyでの使い分け |
-|----------------|------------------|
-| セッション vs ヒアリング | **セッション**は作業単位全体（ヒアリング〜生成）を指す。**ヒアリング**はセッション内の質問応答フェーズを指す |
-| 推測 vs 推定 | **推測**（Estimation）を統一用語とする。「推定」は使用しない |
-| アーキテクチャ vs 構成図 | **アーキテクチャ**はクラウドインフラ設計全体を指す。**構成図**（Architecture Diagram）はMermaid形式の図表出力を指す |
-| AIクライアント vs ユーザー | **AIクライアント**はClaude Desktop等のアプリケーションを指す。**ユーザー**はプリセールスエンジニア（人間）を指す |
-| テンプレート vs プロンプト | **テンプレート**は質問定義等の設定データ（`config/`）を指す。**プロンプト**はAIクライアントへのLLM指示文（`prompts/`）を指す |
-| 設定ファイル vs データファイル | **設定ファイル**はYAML形式の構成定義（`config/`、`~/.galley/config/`）。**データファイル**はJSON形式のセッション・ヒアリング結果（`~/.galley/sessions/`） |
-| MCP Tool vs ツール | MCPプロトコルの**Tool**（`create_session` 等）を指す場合は英語表記。一般的な開発ツール（ESLint等）を指す場合は日本語で「ツール」 |
-| galley-hearing / galley-generate vs hearing / generate モジュール | **galley-hearing / galley-generate** は機能設計書での論理的なサーバー区分を指す。実装上は単一MCPサーバー内の **hearing / generate モジュール** として実装される |
-| デフォルト設定 vs ユーザー設定 | **デフォルト設定**はパッケージ同梱の `config/` ディレクトリ。**ユーザー設定**は `~/.galley/config/` にユーザーが手動配置する上書き用設定 |
+### 自動設計モード
+
+**定義**: ヒアリング結果からGalleyが推奨アーキテクチャを自動生成するモード
+
+**説明**: 初期案を素早く作成したいとき、詳しくない領域の参考にしたいとき向け。LLMがヒアリング結果を分析し、推奨構成を `galley:save_architecture` で保存する。
+
+**関連用語**: [対話型設計モード](#対話型設計モード)、[ヒアリング結果](#ヒアリング結果)
+
+**英語表記**: Automatic Design Mode
+
+### 対話型設計モード
+
+**定義**: 利用者がアーキテクチャを主導で組み立て、Galleyが支援するモード
+
+**説明**: 利用者がコンポーネントの追加・削除・設定変更を行い、Galleyがフィードバックやバリデーションを提供する。既にサービス構成が決まっている場合に適する。
+
+**関連用語**: [自動設計モード](#自動設計モード)、[バリデーション](#バリデーション)
+
+**英語表記**: Interactive Design Mode
+
+### テンプレート
+
+**定義**: 検証で頻繁に使うアプリケーション構成の再利用可能な雛形
+
+**説明**: アプリケーションコード、Kubernetesマニフェスト、Terraform定義、メタデータ（`template.json`）で構成される。Object Storage上の所定ディレクトリに配置。
+
+**関連用語**: [テンプレートストア](#テンプレートストア)、[スキャフォールド](#スキャフォールド)
+
+**使用例**:
+- 「テンプレート一覧を確認する」
+- 「REST API + ADBテンプレートからプロジェクトを生成する」
+
+**英語表記**: Template
+
+### テンプレートストア
+
+**定義**: テンプレートを格納・管理するObject Storage上の領域
+
+**説明**: `templates/` プレフィックス配下にテンプレートごとのディレクトリが配置される。開発者がObject Storageにアップロードするだけでテンプレートを追加可能。
+
+**関連用語**: [テンプレート](#テンプレート)
+
+**英語表記**: Template Store
+
+### スキャフォールド
+
+**定義**: テンプレートからパラメータに基づいてプロジェクトを生成するプロセス
+
+**説明**: `galley:scaffold_from_template` でテンプレートをベースにプロジェクトを生成する。パラメータで DBスキーマ、APIエンドポイント、環境変数等をカスタマイズ可能。
+
+**関連用語**: [テンプレート](#テンプレート)
+
+**英語表記**: Scaffold
+
+### 自動デバッグループ
+
+**定義**: LLMがTerraformエラーを解析→コード修正→再実行を自動的に繰り返すプロセス
+
+**説明**: GalleyのMCPツール（`run_terraform_plan`）がエラー詳細を返し、LLMがエラーを解析してTerraformコードを修正し、再度planを実行する。成功するまで繰り返される。
+
+**関連用語**: [Terraform](#terraform)
+
+**英語表記**: Automatic Debug Loop
+
+## 技術用語
+
+### FastMCP
+
+**定義**: Python向けのMCPサーバーフレームワーク
+
+**本プロジェクトでの用途**: Galley MCPサーバーの実装基盤。ツール、リソース、プロンプトの登録とSSE/StreamableHTTPトランスポートを提供。
+
+**バージョン**: 最新安定版
+
+**関連ドキュメント**: [アーキテクチャ設計書](./architecture.md)
+
+### OCI SDK for Python
+
+**定義**: Oracle Cloud InfrastructureのPython用公式SDK
+
+**本プロジェクトでの用途**: Resource Principal認証、Object Storage操作、Resource Manager連携、その他OCI APIアクセス。
+
+**バージョン**: 最新安定版
+
+**関連ドキュメント**: [アーキテクチャ設計書](./architecture.md)
+
+### Pydantic
+
+**定義**: Pythonのデータバリデーション・シリアライゼーションライブラリ
+
+**本プロジェクトでの用途**: データモデル定義（Session、Architecture等）、MCPツールパラメータのバリデーション、JSON変換。
+
+**バージョン**: 2.x
+
+### Terraform
+
+**定義**: HashiCorpが提供するInfrastructure as Code（IaC）ツール
+
+**本プロジェクトでの用途**:
+1. Galleyコンテナ内でのOCIリソースプロビジョニング（検証環境構築）
+2. 配布用インフラ定義（利用者がGalley環境を構築するため）
+
+**バージョン**: 1.x
+
+### Resource Manager
+
+**定義**: OCIが提供するTerraformベースのマネージドIaCサービス
+
+**本プロジェクトでの用途**: 本番デプロイや顧客引き渡し用のインフラ管理。ジョブキュー経由でplan/applyを実行。
+
+**関連ドキュメント**: [機能設計書 F10](./functional-design.md)
+
+### MCPサーバー
+
+**定義**: MCPプロトコルを実装し、ツール・リソース・プロンプトを公開するサーバーアプリケーション
+
+**本プロジェクトでの適用**: GalleyはFastMCPベースのMCPサーバーとして実装される。
+
+### MCPホスト
+
+**定義**: MCPサーバーに接続し、ツールを呼び出すクライアントアプリケーション
+
+**本プロジェクトでの適用**: Claude Desktop、claude.ai等のLLMアプリケーションがMCPホストとして動作する。
+
+### MCPツール
+
+**定義**: MCPサーバーが公開する実行可能な操作（関数）
+
+**本プロジェクトでの適用**: `galley:create_session`、`galley:save_answer`等のツールをFastMCPの`@mcp.tool()`で定義。
+
+### MCPリソース
+
+**定義**: MCPサーバーが公開する読み取り専用のデータソース
+
+**本プロジェクトでの適用**: ヒアリング質問定義、OCIサービス一覧等をFastMCPの`@mcp.resource()`で定義。
+
+### MCPプロンプト
+
+**定義**: MCPサーバーが公開する再利用可能なプロンプトテンプレート
+
+**本プロジェクトでの適用**: ヒアリング開始・設計支援・デプロイ支援プロンプトを`@mcp.prompt()`で定義。
+
+## 略語・頭字語
+
+### MCP
+
+**正式名称**: Model Context Protocol
+
+**意味**: LLMとツール・データソースを接続するためのオープンプロトコル
+
+**本プロジェクトでの使用**: GalleyはMCPサーバーとして実装され、MCPホスト（Claude Desktop等）からツールを呼び出す。
+
+### OCI
+
+**正式名称**: Oracle Cloud Infrastructure
+
+**意味**: Oracleが提供するクラウドインフラストラクチャサービス
+
+**本プロジェクトでの使用**: Galleyが設計・構築・管理するクラウド環境のプラットフォーム。
+
+### OKE
+
+**正式名称**: Oracle Kubernetes Engine
+
+**意味**: OCIのマネージドKubernetesサービス
+
+**本プロジェクトでの使用**: アプリケーションのデプロイ先として使用。kubectlで操作。
+
+### ADB
+
+**正式名称**: Autonomous Database
+
+**意味**: OCIのフルマネージドデータベースサービス
+
+**本プロジェクトでの使用**: アーキテクチャコンポーネントとして利用。Private Endpoint接続のバリデーション対象。
+
+### OCIR
+
+**正式名称**: Oracle Cloud Infrastructure Registry
+
+**意味**: OCIのコンテナイメージレジストリサービス
+
+**本プロジェクトでの使用**: Galleyコンテナイメージの公開先、アプリケーションビルドイメージの格納先。
+
+### IaC
+
+**正式名称**: Infrastructure as Code
+
+**意味**: インフラストラクチャをコードで定義・管理する手法
+
+**本プロジェクトでの使用**: TerraformによるOCIリソースのプロビジョニング。
+
+### SSE
+
+**正式名称**: Server-Sent Events
+
+**意味**: サーバーからクライアントへの一方向リアルタイム通信プロトコル
+
+**本プロジェクトでの使用**: MCPのトランスポートプロトコルの一つ。
+
+### VCN
+
+**正式名称**: Virtual Cloud Network
+
+**意味**: OCI上の仮想ネットワーク
+
+**本プロジェクトでの使用**: Galleyインフラのネットワーク構成、検証環境のネットワーク構成。
+
+### Container Instance
+
+**正式名称**: OCI Container Instances
+
+**意味**: OCIのサーバーレスコンテナ実行環境
+
+**本プロジェクトでの使用**: Galley MCPサーバーの実行環境。Dockerコンテナを直接実行する。
+
+### Dynamic Group
+
+**正式名称**: Dynamic Group
+
+**意味**: リソース属性（OCID、コンパートメント等）に基づいて動的にメンバーが決定されるOCIのグループ
+
+**本プロジェクトでの使用**: Container InstanceをDynamic Groupに含め、Resource Principal認証を有効にする。
+
+### API Gateway
+
+**正式名称**: OCI API Gateway
+
+**意味**: OCIのマネージドAPIゲートウェイサービス
+
+**本プロジェクトでの使用**: MCPエンドポイントのHTTPS終端、URLトークン認証を担当。
+
+## アーキテクチャ用語
+
+### レイヤードアーキテクチャ
+
+**定義**: システムを役割ごとに複数の層に分割し、上位層から下位層への一方向の依存関係を持たせる設計パターン
+
+**本プロジェクトでの適用**:
+```
+MCPプロトコル層 (tools/, resources/, prompts/)
+    ↓
+サービス層 (services/)
+    ↓
+データアクセス層 (storage/)
+    ↓
+外部システム (OCI API, Object Storage)
+```
+
+**関連コンポーネント**: GalleyServer、各Service、StorageService
+
+### Resource Principal認証
+
+**定義**: OCIリソース（Container Instance等）に割り当てられたアイデンティティを使用してOCI APIを認証する方式
+
+**本プロジェクトでの適用**: Container InstanceがDynamic Groupに含まれ、IAM PolicyによりOCIリソースの操作権限を取得する。APIキーの配布・管理が不要。
+
+**関連コンポーネント**: OCIClientFactory、Dynamic Group、IAM Policy
+
+### URLトークン認証
+
+**定義**: URLのクエリパラメータにトークンを含めて認証する方式
+
+**本プロジェクトでの適用**: MCPエンドポイントの認証に使用。`terraform apply` 時にランダム生成されたトークンをAPI Gatewayが検証する。
+
+**関連コンポーネント**: API Gateway、配布用Terraform
+
+## ステータス・状態
+
+### セッションステータス（永続化モデル）
+
+| ステータス | 意味 | 遷移条件 | 次の状態 |
+|----------|------|---------|---------|
+| `in_progress` | 進行中 | セッション作成時の初期状態 | `completed` |
+| `completed` | ヒアリング完了 | `complete_hearing` の実行 | — |
+
+### ワークフロー状態（論理状態）
+
+機能設計書の状態遷移図に示される各状態（Created、Hearing、HearingCompleted、Designing、Validated、Building、Deployed等）は、永続化される `status` フィールドではなく、セッション内のデータ（answers、hearing_result、architecture等の有無）から論理的に導出される。詳細は [機能設計書](./functional-design.md) の「永続化ステータスとワークフロー状態の関係」を参照。
+
+### バリデーション重要度
+
+| 重要度 | 意味 | 対応 |
+|--------|------|------|
+| `error` | 構成が動作しない致命的な問題 | 修正必須 |
+| `warning` | 推奨事項に反する構成 | 修正推奨 |
+| `info` | 参考情報・ベストプラクティス提案 | 任意 |
+
+## データモデル用語
+
+### Session
+
+**定義**: ヒアリングから設計・構築までの全データを保持するルートエンティティ
+
+**主要フィールド**:
+- `id`: UUID v4
+- `status`: `"in_progress"` | `"completed"`
+- `answers`: 質問ID → 回答のマッピング
+- `hearing_result`: ヒアリング結果（完了後に設定）
+- `architecture`: アーキテクチャ（設計後に設定）
+
+**関連エンティティ**: Answer、HearingResult、Architecture
+
+**永続化先**: Object Storage `sessions/{session_id}/session.json`
+
+### Answer
+
+**定義**: ヒアリングの個別質問に対する回答データ
+
+**主要フィールド**:
+- `question_id`: 質問ID
+- `value`: 回答値（テキストまたは複数選択）
+- `answered_at`: 回答日時
+
+**関連エンティティ**: Session（Session.answers辞書内に格納）
+
+### HearingResult
+
+**定義**: ヒアリング完了時に生成される構造化された要件情報
+
+**主要フィールド**:
+- `summary`: 要件サマリー（Markdown）
+- `requirements`: 構造化された要件リスト（カテゴリ・優先度付き）
+- `constraints`: 制約事項
+
+**関連エンティティ**: Session
+
+### ValidationResult
+
+**定義**: アーキテクチャバリデーションの個別検証結果
+
+**主要フィールド**:
+- `severity`: 重要度（error / warning / info）
+- `rule_id`: バリデーションルールID
+- `message`: 問題の説明
+- `affected_components`: 影響コンポーネントID
+- `recommendation`: 推奨する対応
+
+**関連エンティティ**: Architecture
+
+### TerraformResult
+
+**定義**: Terraform実行（plan / apply / destroy）の結果データ
+
+**主要フィールド**:
+- `success`: 実行成功フラグ
+- `command`: 実行コマンド種別
+- `stdout` / `stderr`: 標準出力・エラー出力
+- `exit_code`: 終了コード
+
+### DeployResult
+
+**定義**: アプリケーションデプロイの結果データ
+
+**主要フィールド**:
+- `success`: デプロイ成功フラグ
+- `endpoint`: アクセスエンドポイント
+- `rolled_back`: 自動ロールバック実行フラグ
+
+### AppStatus
+
+**定義**: デプロイ済みアプリケーションの現在のステータス
+
+**主要フィールド**:
+- `status`: `"not_deployed"` | `"deploying"` | `"running"` | `"failed"`
+- `endpoint`: アクセスエンドポイント
+- `health_check`: 直近のヘルスチェック結果
+
+## エラー・例外
+
+### SessionNotFoundError
+
+**クラス名**: `SessionNotFoundError`
+
+**発生条件**: 指定されたセッションIDに対応するセッションがObject Storageに存在しない場合
+
+**対処方法**: 正しいセッションIDを指定してリトライ
+
+### ValidationError
+
+**クラス名**: `ValidationError`
+
+**発生条件**: MCPツールのパラメータがバリデーションに失敗した場合
+
+**対処方法**: エラー詳細に従って入力パラメータを修正
+
+### TerraformError
+
+**クラス名**: `TerraformError`
+
+**発生条件**: `terraform plan` / `terraform apply` が非ゼロの終了コードを返した場合
+
+**対処方法**: `stderr` のエラーメッセージを分析し、Terraformコードを修正して再実行（自動デバッグループ）
+
+## 索引
+
+### あ行
+- [アーキテクチャ](#アーキテクチャ) — ドメイン用語
+- [自動デバッグループ](#自動デバッグループ) — ドメイン用語
+- [自動設計モード](#自動設計モード) — ドメイン用語
+
+### か行
+- [コンポーネント](#コンポーネント) — ドメイン用語
+
+### さ行
+- [スキャフォールド](#スキャフォールド) — ドメイン用語
+- [セッション](#セッション) — ドメイン用語
+- [接続](#接続) — ドメイン用語
+
+### た行
+- [対話型設計モード](#対話型設計モード) — ドメイン用語
+- [テンプレート](#テンプレート) — ドメイン用語
+- [テンプレートストア](#テンプレートストア) — ドメイン用語
+
+### は行
+- [バリデーション](#バリデーション) — ドメイン用語
+- [バリデーションルール](#バリデーションルール) — ドメイン用語
+- [ヒアリング](#ヒアリング) — ドメイン用語
+- [ヒアリング結果](#ヒアリング結果) — ドメイン用語
+
+### A-Z
+- [ADB](#adb) — 略語
+- [Answer](#answer) — データモデル
+- [API Gateway](#api-gateway) — OCI用語
+- [AppStatus](#appstatus) — データモデル
+- [Container Instance](#container-instance) — OCI用語
+- [DeployResult](#deployresult) — データモデル
+- [Dynamic Group](#dynamic-group) — OCI用語
+- [FastMCP](#fastmcp) — 技術用語
+- [Galley](#galley) — ドメイン用語
+- [HearingResult](#hearingresult) — データモデル
+- [IaC](#iac) — 略語
+- [MCP](#mcp) — 略語
+- [MCPサーバー](#mcpサーバー) — 技術用語
+- [MCPツール](#mcpツール) — 技術用語
+- [MCPプロンプト](#mcpプロンプト) — 技術用語
+- [MCPホスト](#mcpホスト) — 技術用語
+- [MCPリソース](#mcpリソース) — 技術用語
+- [OCI](#oci) — 略語
+- [OCI SDK for Python](#oci-sdk-for-python) — 技術用語
+- [OCIR](#ocir) — 略語
+- [OKE](#oke) — 略語
+- [Pydantic](#pydantic) — 技術用語
+- [Resource Manager](#resource-manager) — 技術用語
+- [SSE](#sse) — 略語
+- [Terraform](#terraform) — 技術用語
+- [TerraformResult](#terraformresult) — データモデル
+- [ValidationResult](#validationresult) — データモデル
+- [VCN](#vcn) — 略語

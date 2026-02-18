@@ -1,0 +1,44 @@
+"""ヒアリング関連のMCPプロンプト定義。"""
+
+from fastmcp import FastMCP
+
+
+def register_hearing_prompts(mcp: FastMCP) -> None:
+    """ヒアリング関連のMCPプロンプトを登録する。"""
+
+    @mcp.prompt()
+    async def start_hearing() -> str:
+        """新しいヒアリングセッションを開始するためのプロンプト。
+
+        セッション作成から質問の提示、回答の保存、ヒアリング完了までの
+        フローをガイドします。
+        """
+        return (
+            "OCIソリューション構築のためのヒアリングを開始します。\n\n"
+            "## 手順\n\n"
+            "1. `create_session` ツールでセッションを作成してください。\n"
+            "2. `galley://hearing/questions` リソースからヒアリング質問を確認してください。\n"
+            "3. `galley://hearing/flow` リソースからヒアリングフローを確認してください。\n"
+            "4. フローに従って質問を提示し、利用者の回答を `save_answer` で保存してください。\n"
+            "5. 全ての必要な質問に回答が得られたら、`complete_hearing` でヒアリングを完了してください。\n\n"
+            "## 注意事項\n\n"
+            "- 必須質問（required: true）は必ず回答を得てください。\n"
+            "- 利用者の回答があいまいな場合は、追加質問で詳細を確認してください。\n"
+            "- 回答は `save_answer` または `save_answers_batch` で保存します。\n"
+        )
+
+    @mcp.prompt()
+    async def resume_hearing(session_id: str) -> str:
+        """既存のヒアリングセッションを再開するためのプロンプト。
+
+        Args:
+            session_id: 再開するセッションのID。
+        """
+        return (
+            f"ヒアリングセッション `{session_id}` を再開します。\n\n"
+            "## 手順\n\n"
+            "1. `galley://hearing/questions` リソースからヒアリング質問を確認してください。\n"
+            "2. まだ回答されていない質問を特定してください。\n"
+            "3. 未回答の質問を利用者に提示し、回答を `save_answer` で保存してください。\n"
+            "4. 全ての必要な質問に回答が得られたら、`complete_hearing` でヒアリングを完了してください。\n"
+        )

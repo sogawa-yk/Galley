@@ -1,20 +1,29 @@
-version: "1.0.0"
-default_order:
-  - project_overview
-  - scale
-  - traffic
-  - database
-  - network
-  - security
-  - availability
-  - performance
-  - operations
-  - budget_schedule
+flow:
+  name: "OCI要件ヒアリング"
+  description: "OCIソリューション構築のための要件ヒアリングフロー"
+  phases:
+    - name: "基本要件"
+      description: "システムの基本的な目的と要件を確認します"
+      questions:
+        - purpose
+        - users
+        - workload_type
 
-conditional_rules:
-  - condition: "scale.concurrent_users > 10000"
-    add_categories:
-      - performance
-  - condition: "network.multi_region == true"
-    add_categories:
-      - availability
+    - name: "技術要件"
+      description: "技術的な要件を詳細に確認します"
+      questions:
+        - database_required
+        - network_requirements
+        - security_requirements
+
+    - name: "運用要件"
+      description: "運用面の要件を確認します"
+      questions:
+        - availability_requirements
+        - budget_constraints
+        - timeline
+
+    - name: "追加事項"
+      description: "その他の考慮事項を確認します"
+      questions:
+        - additional_notes

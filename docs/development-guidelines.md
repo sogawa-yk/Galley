@@ -1,810 +1,496 @@
-# 開発ガイドライン（Development Guidelines）
+# 開発ガイドライン (Development Guidelines)
 
-## 1. コーディング規約
+## コーディング規約
 
-### 1.1 TypeScript設定
+### 命名規則
 
-プロジェクト全体で厳密な型チェックを適用する。
+#### 変数・関数
 
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "module": "Node16",
-    "target": "ES2022"
-  }
-}
+```python
+# 変数: snake_case、名詞または名詞句
+session_data = load_session(session_id)
+hearing_result = get_hearing_result(session_id)
+available_services = list_available_services()
+
+# 関数: snake_case、動詞で始める
+def create_session() -> Session: ...
+def validate_architecture(architecture: Architecture) -> list[ValidationResult]: ...
+def export_mermaid(session_id: str) -> str: ...
+
+# 定数: UPPER_SNAKE_CASE
+DEFAULT_CACHE_TTL = 600  # 10分
+MAX_RETRY_COUNT = 3
+OBJECT_STORAGE_NAMESPACE = "galley"
+
+# Boolean: is_, has_, should_, can_ で始める
+is_completed = session.status == "completed"
+has_architecture = session.architecture is not None
+can_deploy = all_validations_passed
 ```
 
-| ルール | 説明 |
-|-------|------|
-| `strict: true` | `strictNullChecks`、`noImplicitAny` 等を一括有効化 |
-| `noUncheckedIndexedAccess` | 配列・オブジェクトのインデックスアクセスに `undefined` チェックを強制 |
-| `noImplicitReturns` | すべてのコードパスで値を返すことを強制 |
-| `module: "Node16"` | ESMモジュール解決。import文に `.js` 拡張子を要求 |
+#### クラス・型
 
-> **`exactOptionalPropertyTypes` について**: MCP SDKやZodの型定義との互換性を確認した上で、実装段階で有効化を検討する。初期段階では有効化しない。
+```python
+# クラス: PascalCase、名詞
+class HearingService: ...
+class ArchitectureValidator: ...
+class StorageService: ...
 
-### 1.2 モジュールシステム
+# Pydanticモデル: PascalCase
+class Session(BaseModel): ...
+class Component(BaseModel): ...
 
-- ESM（ECMAScript Modules）を使用する（`"type": "module"` in package.json）
-- import文では拡張子 `.js` を明記する（TypeScriptでも `.js`）
+# 型エイリアス: PascalCase
+SessionStatus = Literal["in_progress", "completed"]
+ComponentConfig = dict[str, Any]
 
-```typescript
-// 正しい
-import { Storage } from '../core/storage.js';
-import { HearingResult } from '../types/index.js';
-
-// 誤り
-import { Storage } from '../core/storage';
-import { Storage } from '../core/storage.ts';
+# Enum: PascalCase（クラス）、UPPER_SNAKE_CASE（値）
+class Severity(str, Enum):
+    ERROR = "error"
+    WARNING = "warning"
+    INFO = "info"
 ```
 
-### 1.3 exportルール
+### コードフォーマット
 
-named export を使用する。default export は使用しない。
+**インデント**: 4スペース（Python標準）
 
-```typescript
-// 正しい
-export function createSession(args: CreateSessionArgs): Promise<Session> { ... }
-export class GalleyError extends Error { ... }
+**行の長さ**: 最大120文字
 
-// 誤り
-export default function createSession(args: CreateSessionArgs): Promise<Session> { ... }
+**フォーマッター**: Ruff（Black互換モード）
+
+**設定**:
+```toml
+# pyproject.toml
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
 ```
 
-**理由**: named export はリファクタリング時の追跡が容易で、バレルファイル（`types/index.ts`）での re-export と一貫性がある。
+### 型ヒント
 
-### 1.4 `console.log()` の使用禁止
+すべての関数・メソッドに型ヒントを付ける:
 
-stdioトランスポートではstdoutがJSON-RPCプロトコル専用のため、`console.log()` はプロトコルを破壊する。
+```python
+# 引数と戻り値に型ヒントを付ける
+async def create_session(self) -> Session: ...
 
-```typescript
-// 禁止
-console.log('debug message');
+async def save_answer(
+    self,
+    session_id: str,
+    question_id: str,
+    value: str | list[str],
+) -> Answer: ...
 
-// 開発時デバッグ（stderr出力）
-console.error('debug message');     // stderr → プロトコルに影響しない
-console.warn('potential issue');    // stderr → プロトコルに影響しない
-
-// 推奨: Loggerモジュールを使用
-logger.debug('debug message');              // → stderr
-logger.sendToClient('info', 'message');     // → MCP sendLoggingMessage
+# Noneを返す可能性がある場合はOptionalではなく | None
+async def load_session(self, session_id: str) -> Session | None: ...
 ```
 
-ESLintルールで `console.log` を `error` レベルで検出する（1.9参照）。
+**型チェック**: mypy（strictモード）
 
-### 1.5 エラーハンドリング
-
-#### アプリケーションエラー
-
-すべてのアプリケーションエラーは `GalleyError` を使用する。
-
-```typescript
-// エラー定義（src/core/errors.ts）
-export class GalleyError extends Error {
-  constructor(
-    public readonly code: GalleyErrorCode,
-    message: string,
-    public readonly cause?: unknown
-  ) {
-    super(message);
-    this.name = 'GalleyError';
-  }
-}
-
-// エラーコード
-export type GalleyErrorCode =
-  | 'SESSION_NOT_FOUND'
-  | 'INVALID_SESSION_STATUS'
-  | 'VALIDATION_ERROR'
-  | 'FILE_READ_ERROR'
-  | 'FILE_WRITE_ERROR'
-  | 'INVALID_FILENAME'
-  | 'PATH_TRAVERSAL'
-  | 'CONFIG_LOAD_ERROR';
+```toml
+# pyproject.toml
+[tool.mypy]
+python_version = "3.12"
+strict = true
 ```
 
-#### Tool ハンドラでの共通エラー処理
+**テスト**: pytest + pytest-asyncio
 
-Toolハンドラは12個以上あるため、個々のハンドラに try-catch を書く代わりに共通ラッパー関数で統一する。
-
-```typescript
-// Tool ハンドラの共通ラッパー（src/server.ts または hearing/tools.ts 等）
-function wrapToolHandler(
-  handler: (args: unknown) => Promise<{ content: Array<{ type: string; text: string }> }>,
-) {
-  return async (args: unknown) => {
-    try {
-      return await handler(args);
-    } catch (error) {
-      if (error instanceof GalleyError) {
-        return {
-          content: [{ type: 'text' as const, text: `Error [${error.code}]: ${error.message}` }],
-          isError: true,
-        };
-      }
-      logger.error('Unexpected error', error);
-      return {
-        content: [{ type: 'text' as const, text: 'Internal server error' }],
-        isError: true,
-      };
-    }
-  };
-}
-
-// 使用例
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  switch (request.params.name) {
-    case 'create_session':
-      return wrapToolHandler(handleCreateSession)(request.params.arguments);
-    case 'save_answer':
-      return wrapToolHandler(handleSaveAnswer)(request.params.arguments);
-    // ...
-  }
-});
+```toml
+# pyproject.toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 ```
 
-#### エラーメッセージの方針
+### コメント規約
 
-| ルール | 説明 |
-|-------|------|
-| ファイルの絶対パスを含めない | 情報漏洩防止。相対パスまたはファイル名のみを使用 |
-| エラーコードを含める | プログラムで判別可能にする |
-| 内部情報を露出しない | スタックトレースやシステムパスをクライアントに返さない |
+**docstring（Google style）**:
+```python
+async def validate_architecture(self, session_id: str) -> list[ValidationResult]:
+    """アーキテクチャ構成をバリデーションルールに基づいて検証する。
 
-### 1.6 バリデーション
+    Args:
+        session_id: 検証対象のセッションID。
 
-#### Tool引数のバリデーション
+    Returns:
+        検出された問題のリスト。問題がない場合は空リスト。
 
-すべてのTool引数はZodスキーマでバリデーションする。
-
-```typescript
-import { z } from 'zod';
-
-// スキーマ定義
-const CreateSessionArgsSchema = z.object({
-  project_description: z.string().min(1).max(1000),
-});
-
-// 型の導出
-type CreateSessionArgs = z.infer<typeof CreateSessionArgsSchema>;
+    Raises:
+        SessionNotFoundError: 指定されたセッションが存在しない場合。
+        ArchitectureNotFoundError: セッションにアーキテクチャが未設定の場合。
+    """
 ```
 
-#### YAML設定ファイルのバリデーション
-
-`config/` のYAMLファイルも読み込み時にZodスキーマでバリデーションする。
-
-```typescript
-// 設定ファイル用のスキーマ定義例
-const HearingQuestionsConfigSchema = z.object({
-  version: z.string(),
-  categories: z.array(z.object({
-    id: z.string(),
-    label: z.string(),
-    questions: z.array(z.object({
-      id: z.string(),
-      text: z.string(),
-      options: z.array(z.string()).optional(),
-    })),
-  })),
-});
-
-// 読み込み時にバリデーション
-const raw = yaml.parse(await readFile(configPath, 'utf-8'));
-const config = HearingQuestionsConfigSchema.parse(raw);
+**インラインコメント**:
+```python
+# なぜそうするかを説明する
+# Resource Principalが利用できない場合はAPI Key認証にフォールバック
+if not is_resource_principal_available():
+    signer = get_api_key_signer()
 ```
 
-#### バリデーションの配置
+### エラーハンドリング
 
-| 境界 | バリデーション方法 |
-|------|----------------|
-| Tool引数（外部入力） | Zodスキーマで厳密にバリデーション |
-| ファイルから読み込んだJSON | Zodスキーマでパースし、不正データを早期検出 |
-| YAMLから読み込んだ設定 | Zodスキーマでパースし、不正設定を早期検出 |
-| モジュール間の内部呼び出し | TypeScriptの型システムに委任（ランタイムバリデーションは不要） |
+**原則**:
+- カスタム例外クラスを定義し、エラーの種類を明確にする
+- MCPツールからの応答は構造化されたエラー情報を返す
+- 予期しないエラーはログ出力して上位に伝播
 
-### 1.7 非同期処理
+**カスタム例外の定義**:
+```python
+class GalleyError(Exception):
+    """Galleyの基底例外クラス。"""
 
-- ファイルI/Oは常に非同期API（`fs/promises`）を使用する
-- `fs.readFileSync` 等の同期APIは使用禁止（MCPサーバーのイベントループをブロックする）
-- 例外: プロセス起動時の初期化処理（設定ファイル読み込み等）は同期でも可
+class SessionNotFoundError(GalleyError):
+    """セッションが見つからない場合の例外。"""
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Session not found: {session_id}")
+        self.session_id = session_id
 
-```typescript
-// 正しい
-import { readFile, writeFile } from 'node:fs/promises';
-const data = await readFile(filePath, 'utf-8');
+class ValidationError(GalleyError):
+    """バリデーションエラー。"""
+    def __init__(self, message: str, details: list[dict]) -> None:
+        super().__init__(message)
+        self.details = details
 
-// 誤り
-import { readFileSync } from 'node:fs';
-const data = readFileSync(filePath, 'utf-8');
+class TerraformError(GalleyError):
+    """Terraform実行エラー。"""
+    def __init__(self, message: str, stderr: str, exit_code: int) -> None:
+        super().__init__(message)
+        self.stderr = stderr
+        self.exit_code = exit_code
 ```
 
-### 1.8 依存パッケージの方針
-
-| ルール | 説明 |
-|-------|------|
-| 依存最小化 | Node.js標準ライブラリで実現可能な機能は外部パッケージを使わない |
-| 日時処理 | `Date.toISOString()` を使用。`date-fns` 等の日時ライブラリは導入しない |
-| UUID生成 | `crypto.randomUUID()` を優先。不足があれば `uuid` パッケージを使用 |
-| バージョン固定 | `package-lock.json` をコミットし、依存バージョンを固定する |
-
-### 1.9 ESLint設定
-
-ESLint 9以降のフラットコンフィグ形式（`eslint.config.js`）を使用する。
-
-```javascript
-// eslint.config.js
-import eslint from '@eslint/js';
-import tseslint from 'typescript-eslint';
-import prettier from 'eslint-config-prettier';
-
-export default tseslint.config(
-  eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
-  prettier,
-  {
-    languageOptions: {
-      parserOptions: {
-        project: './tsconfig.json',
-      },
-    },
-    rules: {
-      // console.log を禁止（console.error, console.warn は許可）
-      'no-console': ['error', { allow: ['error', 'warn'] }],
-      // 未使用変数（_ プレフィックスは許可）
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      // any の使用を禁止
-      '@typescript-eslint/no-explicit-any': 'error',
-      // 非null アサーション演算子の使用を警告
-      '@typescript-eslint/no-non-null-assertion': 'warn',
-      // Promise の戻り値を無視しない
-      '@typescript-eslint/no-floating-promises': 'error',
-      // async 関数で await がない場合にエラー
-      '@typescript-eslint/require-await': 'error',
-    },
-  },
-  {
-    // テストファイルの緩和ルール
-    files: ['tests/**/*.test.ts'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-    },
-  },
-);
+**MCPツールでのエラーハンドリング**:
+```python
+@mcp.tool()
+async def create_session() -> dict:
+    try:
+        session = await hearing_service.create_session()
+        return {"session_id": session.id, "status": session.status}
+    except GalleyError as e:
+        return {"error": type(e).__name__, "message": str(e)}
 ```
 
-**必要な devDependencies**:
-- `eslint` (v9+)
-- `typescript-eslint`
-- `eslint-config-prettier`
-- `@eslint/js`
+## Git運用ルール
 
-### 1.10 Prettier設定
+### ブランチ戦略
 
-```json
-{
-  "semi": true,
-  "singleQuote": true,
-  "trailingComma": "all",
-  "printWidth": 100,
-  "tabWidth": 2
-}
+**ブランチ種別**:
+- `main`: 本番環境にデプロイ可能な状態
+- `feature/{機能名}`: 新機能開発
+- `fix/{修正内容}`: バグ修正
+- `refactor/{対象}`: リファクタリング
+- `docs/{対象}`: ドキュメント更新
+
+**フロー**:
+```
+main
+  ├─ feature/hearing-tools
+  ├─ feature/design-validation
+  ├─ fix/session-persistence
+  └─ docs/update-architecture
 ```
 
----
+### コミットメッセージ規約
 
-## 2. 命名規則
+**フォーマット**:
+```
+<type>(<scope>): <subject>
 
-### 2.1 ファイル・ディレクトリ
+<body>
 
-| 対象 | 規則 | 例 |
-|------|------|-----|
-| TypeScriptファイル | kebab-case | `storage.ts`、`hearing-result.ts` |
-| テストファイル | `{対象}.test.ts` | `storage.test.ts` |
-| ディレクトリ | kebab-case | `hearing/`、`core/` |
-| YAML設定ファイル | kebab-case | `oci-services.yaml` |
-| プロンプトテンプレート | kebab-case | `start-hearing.md` |
-
-### 2.2 TypeScriptコード
-
-| 対象 | 規則 | 例 |
-|------|------|-----|
-| 変数・関数 | camelCase | `sessionId`、`createSession()` |
-| 定数（モジュールレベル） | UPPER_SNAKE_CASE | `DEFAULT_CONFIG_DIR`、`MAX_SESSIONS` |
-| 型・インターフェース | PascalCase | `HearingResult`、`SessionStatus` |
-| Zodスキーマ | PascalCase + `Schema` 接尾辞 | `CreateSessionArgsSchema` |
-| Zodスキーマから導出した型 | PascalCase（`Schema` なし） | `CreateSessionArgs` |
-| Enum（Zodのenum） | PascalCase（型名）、snake_case（値） | `AnswerSource` の値: `user_selected`、`estimated` |
-| クラス | PascalCase | `GalleyError`、`Logger` |
-| MCP Tool名 | snake_case | `create_session`、`save_answer` |
-| MCP Resource URI | kebab-case（パスセグメント） | `galley://templates/hearing-questions` |
-| MCP Prompt名 | kebab-case | `start-hearing`、`generate-architecture` |
-
-### 2.3 JSONフィールド
-
-ヒアリング結果JSON、セッションJSON等のデータファイルのフィールド名は **snake_case** を使用する。
-
-```json
-{
-  "metadata": {
-    "hearing_id": "...",
-    "created_at": "...",
-    "updated_at": "..."
-  },
-  "project_overview": {
-    "project_type": "..."
-  }
-}
+<footer>
 ```
 
-**理由**: MCP SDKのTool引数・レスポンスの慣例（snake_case）に合わせる。TypeScriptコード内ではZodスキーマが snake_case のJSONフィールドを camelCase に変換せず、そのまま snake_case で扱う。
+**Type**:
+- `feat`: 新機能
+- `fix`: バグ修正
+- `docs`: ドキュメント
+- `style`: コードフォーマット
+- `refactor`: リファクタリング
+- `test`: テスト追加・修正
+- `chore`: ビルド、補助ツール等
 
-### 2.4 エラーコード
+**Scope**: `hearing`, `design`, `infra`, `app`, `storage`, `server`, `models`, `validators`, `deploy`, `config`
 
-UPPER_SNAKE_CASE を使用する。
+Scopeはリポジトリ構造のディレクトリ（services/、tools/、models/等）またはドメイン概念（hearing、design等）に対応させる。
 
-```typescript
-type GalleyErrorCode =
-  | 'SESSION_NOT_FOUND'
-  | 'VALIDATION_ERROR'
-  | 'FILE_WRITE_ERROR';
+**例**:
+```
+feat(hearing): ヒアリングセッションの作成・管理機能を実装
+
+HearingServiceにcreate_session、save_answer、complete_hearingを実装。
+セッションデータはObject Storageに永続化される。
+
+- Session、Answer、HearingResultのPydanticモデルを追加
+- StorageServiceにセッションCRUD操作を追加
+- MCPツールとして登録
+
+Closes #12
 ```
 
----
-
-## 3. フォーマット規約
-
-### 3.1 自動フォーマット
-
-コードのフォーマットはPrettierに委任する。手動でのフォーマット調整は行わない。
-
-| 設定 | 値 | 備考 |
-|------|-----|------|
-| セミコロン | あり | `semi: true` |
-| クォート | シングル | `singleQuote: true` |
-| 末尾カンマ | あり | `trailingComma: "all"` |
-| 行幅 | 100文字 | `printWidth: 100` |
-| インデント | スペース2 | `tabWidth: 2` |
-
-### 3.2 フォーマット対象
-
-| 対象 | 含む | 備考 |
-|------|------|------|
-| `src/**/*.ts` | はい | アプリケーションコード |
-| `tests/**/*.ts` | はい | テストコード |
-| `*.md` | はい | ドキュメント（Prettierのデフォルト） |
-| `*.yaml` | はい | 設定ファイル |
-| `*.json` | はい | package.json、tsconfig.json等 |
-
-### 3.3 import文の整理
-
-import文は以下のグループ順に整理し、グループ間に空行を入れる。
-
-```typescript
-// 1. Node.js標準モジュール
-import path from 'node:path';
-import { readFile } from 'node:fs/promises';
-
-// 2. 外部パッケージ
-import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-// 3. プロジェクト内モジュール（相対パス）
-import { Storage } from '../core/storage.js';
-import { HearingResult } from '../types/index.js';
-```
-
-### 3.4 YAML設定ファイル
-
-| 設定 | 値 |
-|------|-----|
-| インデント | スペース2 |
-| 文字列引用符 | 値にコロンや特殊文字を含む場合のみクォート |
-| コメント | セクション区切りと意図の説明に使用 |
-
----
-
-## 4. テスト規約
-
-### 4.1 テストの分類と範囲
-
-| 分類 | ツール | 対象 | MVP段階の実施 |
-|------|-------|------|-------------|
-| ユニットテスト | Vitest | 個々の関数・モジュール | 必須 |
-| 統合テスト | MCP Inspector | MCPプロトコル経由のE2E | 手動で実施 |
-| E2Eテスト | Claude Desktop | 実際のAIクライアントでのフロー | 手動で実施 |
-
-### 4.2 Vitest設定
-
-```typescript
-// vitest.config.ts
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  test: {
-    include: ['tests/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      include: ['src/**/*.ts'],
-      exclude: ['src/types/**'],
-      thresholds: {
-        // core/ は高カバレッジを要求
-        'src/core/': { statements: 90 },
-      },
-    },
-  },
-});
-```
-
-### 4.3 ユニットテストの書き方
-
-#### テストの構造
-
-`describe` - `it` 構造を使用する。テスト名は英語で記述する。
-
-```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-describe('createSession', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should create a new session with valid project description', async () => {
-    // Arrange
-    const args = { project_description: 'Inventory management system' };
-
-    // Act
-    const result = await createSession(args);
-
-    // Assert
-    expect(result.session_id).toBeDefined();
-    expect(result.session_id).toMatch(/^[0-9a-f-]{36}$/);
-  });
-
-  it('should throw VALIDATION_ERROR when project_description is empty', async () => {
-    const args = { project_description: '' };
-
-    await expect(createSession(args)).rejects.toThrow(GalleyError);
-  });
-});
-```
-
-#### テストのパターン
-
-| パターン | 説明 |
-|---------|------|
-| Arrange-Act-Assert | テストは準備・実行・検証の3段階で構成する |
-| モック化 | ファイルI/Oは `vi.mock()` でモック化する。実際のファイルシステムへのアクセスは `core/storage.test.ts` のみ |
-| フィクスチャ | テストデータは `tests/fixtures/` から読み込む |
-| 独立性 | 各テストは他のテストに依存しない。`beforeEach` でモックをリセットする |
-
-#### カバレッジ目標
-
-| 対象 | カバレッジ目標 | 理由 |
-|------|-------------|------|
-| `core/` | > 90% | ファイルI/O・バリデーション等の基盤は高信頼が必要 |
-| `hearing/tools.ts` | > 80% | ビジネスロジックの正確性を担保 |
-| `generate/tools.ts` | > 80% | ファイル出力の正確性を担保 |
-| `*/resources.ts` | > 60% | 設定ファイル読み込みが主なので、正常系中心 |
-| `*/prompts.ts` | > 60% | テンプレート変数展開が正しいことを確認 |
-
-### 4.4 モックの方針
-
-```typescript
-// Storage のモック例
-vi.mock('../core/storage.js', () => ({
-  readJson: vi.fn(),
-  writeJson: vi.fn(),
-  exists: vi.fn(),
-}));
-
-// テスト内でモックの振る舞いを設定
-import { readJson, writeJson } from '../core/storage.js';
-
-it('should save answer to existing session', async () => {
-  vi.mocked(readJson).mockResolvedValue(mockHearingResult);
-  vi.mocked(writeJson).mockResolvedValue(undefined);
-
-  const result = await saveAnswer(args);
-
-  expect(writeJson).toHaveBeenCalledWith(
-    expect.stringContaining('hearing-result.json'),
-    expect.objectContaining({ /* ... */ }),
-  );
-});
-```
-
-### 4.5 テストの実行
-
-```bash
-# 全テスト実行
-npm test
-
-# ウォッチモード（開発中）
-npm run test:watch
-
-# カバレッジレポート付き
-npx vitest run --coverage
-```
-
----
-
-## 5. Git規約
-
-### 5.1 ブランチ戦略
-
-MVP段階では簡易なブランチ戦略を採用する。
-
-```
-main（安定版）
-  └── feature/{feature-name}    ... 機能追加
-  └── fix/{fix-description}     ... バグ修正
-  └── docs/{document-name}      ... ドキュメント変更
-```
-
-| ブランチ | 用途 | マージ先 |
-|---------|------|---------|
-| `main` | 安定版。リリース可能な状態を維持 | — |
-| `feature/*` | 新機能の開発 | `main` |
-| `fix/*` | バグ修正 | `main` |
-| `docs/*` | ドキュメントのみの変更 | `main` |
-
-- ブランチ名は英語の kebab-case（例: `feature/add-batch-save`、`fix/path-traversal-validation`）
-- `main` への直接コミットは避け、Pull Requestを通してマージする
-- MVP段階は1人開発のため、レビューは任意とする
-
-### 5.2 コミットメッセージ
-
-[Conventional Commits](https://www.conventionalcommits.org/) に準拠する。
-
-#### フォーマット
-
-```
-<type>(<scope>): <description>
-
-[body]
-```
-
-- **description**（1行目）: 英語で記述。小文字始まり、末尾ピリオドなし
-- **body**（2行目以降）: 任意。英語または日本語。変更の意図や背景を記述
-
-#### type
-
-| type | 用途 |
-|------|------|
-| `feat` | 新機能の追加 |
-| `fix` | バグ修正 |
-| `refactor` | リファクタリング（機能変更なし） |
-| `test` | テストの追加・修正 |
-| `docs` | ドキュメントの追加・修正 |
-| `chore` | ビルド設定・依存パッケージ更新等 |
-| `style` | コードフォーマットの変更（ロジック変更なし） |
-
-#### scope
-
-| scope | 対象 |
-|-------|------|
-| `hearing` | hearing モジュール |
-| `generate` | generate モジュール |
-| `core` | core モジュール |
-| `config` | 設定ファイル |
-| `prompts` | プロンプトテンプレート |
-| `deps` | 依存パッケージ |
-
-#### 例
-
-```
-feat(hearing): add save_answers_batch tool for batch saving
-
-fix(core): prevent path traversal in validateOutputPath
-
-refactor(generate): extract Mermaid rendering logic
-
-test(hearing): add unit tests for complete_hearing
-
-docs: update architecture document with logging strategy
-
-chore(deps): update @modelcontextprotocol/sdk to 1.3.0
-```
-
-### 5.3 コミットの粒度
-
-| ルール | 説明 |
-|-------|------|
-| 1コミット1変更 | 機能追加とバグ修正を同じコミットに含めない |
-| ビルドが通る状態 | 各コミットでビルド・テストが通る状態を維持する |
-| WIPコミット禁止 | `main` にマージされるコミットに `WIP` を含めない |
-
-### 5.4 Pull Request
-
-#### タイトル
-
-コミットメッセージと同じ Conventional Commits フォーマットを使用する（英語）。
-
-#### 説明テンプレート
-
+### プルリクエストプロセス
+
+**作成前のチェック**:
+- [ ] 全てのテストがパス（`pytest`）
+- [ ] リントエラーがない（`ruff check`）
+- [ ] 型チェックがパス（`mypy`）
+- [ ] フォーマットが適用されている（`ruff format --check`）
+
+**PRテンプレート**:
 ```markdown
-## Summary
-<!-- Brief description of the changes (1-3 lines) -->
+## 概要
+[変更内容の簡潔な説明]
 
-## Changes
-<!-- Key changes as bullet points -->
+## 変更理由
+[なぜこの変更が必要か]
 
-## Checklist
-- [ ] Unit tests added / updated
-- [ ] `npm test` — all tests pass
-- [ ] `npm run typecheck` — no errors
-- [ ] `npm run lint` — no errors
-- [ ] Tested with MCP Inspector (if applicable)
+## 変更内容
+- [変更点1]
+- [変更点2]
+
+## テスト
+- [ ] ユニットテスト追加
+- [ ] 統合テスト追加（該当する場合）
+- [ ] 手動テスト実施
+
+## 関連Issue
+Closes #[Issue番号]
 ```
 
----
+## テスト戦略
 
-## 6. 品質チェック
+### テストの種類
 
-### 6.1 開発ワークフロー
+#### ユニットテスト
 
-日常の開発は以下のフローで行う。
+**対象**: 個別のサービスクラス・関数
+
+**カバレッジ目標**: 80%
+
+**例**:
+```python
+import pytest
+from galley.services.hearing import HearingService
+from galley.models.session import Session
+
+class TestHearingService:
+    async def test_create_session_returns_new_session(
+        self, hearing_service: HearingService
+    ) -> None:
+        session = await hearing_service.create_session()
+
+        assert session.id is not None
+        assert session.status == "in_progress"
+        assert session.answers == {}
+
+    async def test_save_answer_stores_answer(
+        self, hearing_service: HearingService
+    ) -> None:
+        session = await hearing_service.create_session()
+        answer = await hearing_service.save_answer(
+            session.id, "purpose", "REST API構築"
+        )
+
+        assert answer.question_id == "purpose"
+        assert answer.value == "REST API構築"
+
+    async def test_complete_hearing_requires_answers(
+        self, hearing_service: HearingService
+    ) -> None:
+        session = await hearing_service.create_session()
+
+        with pytest.raises(ValidationError):
+            await hearing_service.complete_hearing(session.id)
+```
+
+#### 統合テスト
+
+**対象**: MCPプロトコル経由のツール呼び出し
+
+**例**:
+```python
+import json
+from fastmcp import Client
+
+def parse_tool_result(result: object) -> dict:
+    """CallToolResultからJSONデータを抽出する。"""
+    content = result.content  # type: ignore[union-attr]
+    assert len(content) > 0
+    return json.loads(content[0].text)  # type: ignore[union-attr]
+
+async def test_hearing_flow_via_mcp(mcp_server) -> None:
+    async with Client(mcp_server) as client:  # type: ignore[arg-type]
+        # セッション作成
+        result = await client.call_tool("create_session", {})
+        data = parse_tool_result(result)
+        assert "session_id" in data
+
+        session_id = data["session_id"]
+
+        # 回答保存
+        result = await client.call_tool("save_answer", {
+            "session_id": session_id,
+            "question_id": "purpose",
+            "value": "REST API構築",
+        })
+        data = parse_tool_result(result)
+        assert data["question_id"] == "purpose"
+```
+
+**注意**: FastMCP 2.x の `Client.call_tool()` は `CallToolResult` オブジェクトを返す。レスポンスデータには `result.content[0].text` でアクセスする。ツール名には `galley:` 等のプレフィックスは付かない。
+
+#### E2Eテスト
+
+**対象**: 実際のOCI環境での全体フロー
+
+**例**:
+```python
+@pytest.mark.e2e
+async def test_terraform_plan_apply_destroy(infra_service) -> None:
+    session_id = "test-session"
+    terraform_dir = "/tmp/test-terraform"
+
+    # Plan
+    plan_result = await infra_service.run_terraform_plan(session_id, terraform_dir)
+    assert plan_result.success
+
+    # Apply
+    apply_result = await infra_service.run_terraform_apply(session_id, terraform_dir)
+    assert apply_result.success
+
+    # Destroy
+    destroy_result = await infra_service.run_terraform_destroy(session_id, terraform_dir)
+    assert destroy_result.success
+```
+
+### テスト命名規則
+
+**パターン**: `test_{対象メソッド}_{条件}_{期待結果}`
+
+```python
+# 正常系
+def test_create_session_returns_new_session(): ...
+def test_save_answer_stores_answer_in_session(): ...
+def test_validate_architecture_returns_empty_for_valid(): ...
+
+# 異常系
+def test_save_answer_raises_error_for_invalid_session(): ...
+def test_complete_hearing_raises_error_without_answers(): ...
+def test_run_terraform_plan_returns_error_for_invalid_tf(): ...
+```
+
+### モック・フィクスチャの使用
+
+**原則**:
+- OCI SDK クライアント、Object Storageアクセスはモック化
+- 外部プロセス実行（Terraform、OCI CLI）はモック化
+- ビジネスロジックは実装を使用
+
+**例**:
+```python
+@pytest.fixture
+def mock_storage() -> AsyncMock:
+    storage = AsyncMock(spec=StorageService)
+    storage.save_session = AsyncMock()
+    storage.load_session = AsyncMock(return_value=None)
+    return storage
+
+@pytest.fixture
+def hearing_service(mock_storage: AsyncMock) -> HearingService:
+    return HearingService(storage=mock_storage, config=test_config)
+```
+
+## コードレビュー基準
+
+### レビューポイント
+
+**機能性**:
+- [ ] PRDの要件を満たしているか
+- [ ] エッジケースが考慮されているか
+- [ ] エラーハンドリングが適切か
+
+**可読性**:
+- [ ] 命名が明確か
+- [ ] 型ヒントが付いているか
+- [ ] docstringが適切か
+
+**保守性**:
+- [ ] レイヤー間の依存関係ルールに従っているか
+- [ ] 重複コードがないか
+- [ ] 責務が明確に分離されているか
+
+**セキュリティ**:
+- [ ] 入力検証が適切か（特にOCI CLI実行、ファイルパス操作）
+- [ ] 機密情報がハードコードされていないか
+- [ ] IAMの最小権限原則に従っているか
+
+## 開発環境セットアップ
+
+### 必要なツール
+
+| ツール | バージョン | インストール方法 |
+|--------|-----------|-----------------|
+| Python | 3.12+ | devcontainerに含まれる |
+| uv | 最新安定版 | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Docker | 最新安定版 | devcontainerに含まれる |
+
+### セットアップ手順
 
 ```bash
-# 1. コード修正
-# （エディタで src/ のファイルを編集）
+# 1. リポジトリのクローン
+git clone <repository-url>
+cd galley
 
-# 2. ビルド（ウォッチモードなら自動）
-npm run build          # 単発ビルド
-# npm run dev          # ウォッチモード
+# 2. devcontainerの起動
+#    VS Code: コマンドパレット → "Dev Containers: Reopen in Container"
+#    CLI: devcontainer up --workspace-folder .
 
-# 3. ユニットテスト
-npm test
+# 3. 依存関係のインストール
+uv sync
 
-# 4. MCP Inspectorで動作確認
-npm run inspect        # ブラウザUIでResources/Tools/Promptsを操作
+# 4. OCI CLI設定（ローカル開発時のみ、Resource Principalが使えない環境）
+oci setup config
+# ~/.oci/config にデフォルトプロファイルが作成される
+# tenancy、user、region、鍵ファイルパスを設定
 
-# 5. Claude Desktopで統合テスト（必要な場合のみ）
-# Claude Desktopの設定で galley MCPサーバーを登録して実際に使用
+# 5. テストの実行
+uv run pytest
+
+# 6. リンター・フォーマッターの実行
+uv run ruff check .
+uv run ruff format .
+uv run mypy src/
+
+# 7. 開発サーバーの起動（ローカル）
+uv run python -m galley.server
 ```
 
-### 6.2 コミット前チェックリスト
-
-コードをコミットする前に、以下を確認する。
+### よく使うコマンド
 
 ```bash
-npm run typecheck && npm run lint && npm test && npm run build
+# テスト
+uv run pytest                          # 全テスト実行
+uv run pytest tests/unit/              # ユニットテストのみ
+uv run pytest tests/integration/       # 統合テストのみ
+uv run pytest -k "test_hearing"        # 特定テストのみ
+uv run pytest --cov=galley             # カバレッジ付き
+
+# コード品質
+uv run ruff check .                    # リントチェック
+uv run ruff check . --fix              # 自動修正
+uv run ruff format .                   # フォーマット
+uv run mypy src/                       # 型チェック
+
+# サーバー起動
+uv run python -m galley.server         # MCPサーバー起動
 ```
-
-### 6.3 品質ゲート
-
-| チェック | コマンド | 合格条件 |
-|---------|---------|---------|
-| TypeScript型チェック | `npm run typecheck` | エラー0件 |
-| ESLint | `npm run lint` | エラー0件（警告は許容） |
-| Prettier | `npx prettier --check 'src/**' 'tests/**'` | 差分0件 |
-| ユニットテスト | `npm test` | 全テストパス |
-| ビルド | `npm run build` | エラーなしでビルド完了 |
-
-### 6.4 npmスクリプト
-
-```json
-{
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "start": "node dist/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts'",
-    "format": "prettier --write 'src/**' 'tests/**'",
-    "format:check": "prettier --check 'src/**' 'tests/**'",
-    "typecheck": "tsc --noEmit",
-    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
-  }
-}
-```
-
-### 6.5 pre-commitフック
-
-MVP段階ではpre-commitフックは導入しない（1人開発のためオーバーヘッドが大きい）。チーム展開時に `husky` + `lint-staged` で以下を自動化する。
-
-```json
-{
-  "lint-staged": {
-    "*.ts": ["eslint --fix", "prettier --write"],
-    "*.{md,yaml,json}": ["prettier --write"]
-  }
-}
-```
-
-### 6.6 将来の自動化（CI/CD導入時）
-
-MVP段階では手動実行。チーム展開時にGitHub Actionsで自動化する。
-
-```yaml
-# .github/workflows/ci.yml（将来導入）
-name: CI
-on: [push, pull_request]
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm test
-      - run: npm run build
-```
-
----
-
-## 7. MCP固有の開発ルール
-
-### 7.1 stdioプロトコルの遵守
-
-| ルール | 理由 |
-|-------|------|
-| `console.log()` を使用しない | stdoutはJSON-RPCプロトコル専用 |
-| デバッグ出力は `console.error()` / `console.warn()` | stderrはプロトコルに影響しない |
-| 構造化ログは `server.sendLoggingMessage()` | AIクライアントに構造化情報を送信 |
-
-### 7.2 Resource変更通知
-
-`create_session` / `delete_session` 実行後は、セッション一覧Resourceの変更を通知する。
-
-```typescript
-// McpServer クラスを使用する場合、管理メソッド経由の変更は自動通知される
-// 手動で通知する場合:
-server.sendResourcesListChanged();
-```
-
-> **クライアントサポート**: `notifications/resources/list_changed` はすべてのAIクライアントでサポートされているわけではない。通知が無視されても動作に支障がないよう設計する。
-
-### 7.3 Tool の description 設計
-
-Prompts非対応のAIクライアントでも正しく動作するよう、Toolの `description` に十分な情報を含める。
-
-```typescript
-{
-  name: 'create_session',
-  description:
-    'Create a new hearing session. Call this first before starting ' +
-    'the hearing process. Pass the project description from the user.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      project_description: {
-        type: 'string',
-        description: 'Brief description of the project/demo requirements',
-      },
-    },
-    required: ['project_description'],
-  },
-}
-```
-
-### 7.4 セッションデータの整合性
-
-セッションのステータス遷移は一方向のみ。
-
-```mermaid
-stateDiagram-v2
-    [*] --> in_progress: create_session
-    in_progress --> in_progress: save_answer / save_answers_batch
-    in_progress --> completed: complete_hearing
-    completed --> [*]: delete_session
-    in_progress --> [*]: delete_session
-```
-
-| ルール | 説明 |
-|-------|------|
-| ステータス遷移 | `in_progress` → `completed` の一方向のみ。逆方向の遷移は不可 |
-| 完了後の保護 | `completed` 状態のセッションへの `save_answer` はエラーとする |
-| 未回答の許容 | `complete_hearing` は未回答の質問がある場合でも実行可能。未回答は `not_answered` として記録 |

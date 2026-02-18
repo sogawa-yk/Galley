@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+tests/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+
+# Terraform
+deploy/.terraform/
+deploy/.terraform.lock.hcl
+deploy/terraform.tfstate*
+deploy/*.tfvars
+
+# Runtime data
+.galley/
+
+# Steering / Claude config
+.steering/
+.claude/
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+docs/
+CLAUDE.md
