@@ -43,7 +43,7 @@ variable "image_tag" {
 variable "galley_image_url" {
   description = "GalleyコンテナイメージのフルURL。未指定時はデフォルトのOCIRリポジトリを使用。"
   type        = string
-  default     = ""
+  default     = "kix.ocir.io/orasejapan/galley:${var.image_tag}"
 }
 
 variable "container_instance_shape" {
