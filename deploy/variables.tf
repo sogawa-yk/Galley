@@ -13,16 +13,6 @@ variable "region" {
   type        = string
 }
 
-variable "dynamic_group_id" {
-  description = "既存の動的グループのOCID。Container InstanceのResource Principal認証に使用。"
-  type        = string
-
-  validation {
-    condition     = can(regex("^ocid1\\.dynamicgroup\\.", var.dynamic_group_id))
-    error_message = "dynamic_group_id は動的グループのOCIDである必要があります。"
-  }
-}
-
 variable "galley_work_compartment_id" {
   description = "Galleyの作業対象コンパートメントOCID。未指定時はcompartment_idと同じ。"
   type        = string
