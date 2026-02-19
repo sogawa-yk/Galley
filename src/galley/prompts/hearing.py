@@ -25,6 +25,7 @@ def register_hearing_prompts(mcp: FastMCP) -> None:
             "- 必須質問（required: true）は必ず回答を得てください。\n"
             "- 利用者の回答があいまいな場合は、追加質問で詳細を確認してください。\n"
             "- 回答は `save_answer` または `save_answers_batch` で保存します。\n"
+            "- **ヒアリングは必ずチャット内の対話で行ってください。HTMLフォームやWebページを生成してはいけません。**\n"
         )
 
     @mcp.prompt()
@@ -40,5 +41,7 @@ def register_hearing_prompts(mcp: FastMCP) -> None:
             "1. `get_hearing_questions` ツールでヒアリング質問を取得してください。\n"
             "2. まだ回答されていない質問を特定してください。\n"
             "3. 未回答の質問を利用者に提示し、回答を `save_answer` で保存してください。\n"
-            "4. 全ての必要な質問に回答が得られたら、`complete_hearing` でヒアリングを完了してください。\n"
+            "4. 全ての必要な質問に回答が得られたら、`complete_hearing` でヒアリングを完了してください。\n\n"
+            "## 注意事項\n\n"
+            "- **ヒアリングは必ずチャット内の対話で行ってください。HTMLフォームやWebページを生成してはいけません。**\n"
         )
