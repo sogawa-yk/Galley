@@ -29,7 +29,7 @@ Thumbs.db
 .env
 .env.local
 
-# Terraform
+# Terraform (deploy/ - ユーザー向けデプロイテンプレート)
 deploy/.terraform/
 deploy/.terraform.lock.hcl
 deploy/terraform.tfstate
@@ -37,6 +37,15 @@ deploy/terraform.tfstate.backup
 deploy/terraform.tfvars
 deploy/*.tfvars
 deploy/.terraform.tfstate.lock.info
+
+# Terraform (infra/preview/ - 開発プレビュー環境)
+infra/preview/.terraform/
+infra/preview/.terraform.lock.hcl
+infra/preview/terraform.tfstate
+infra/preview/terraform.tfstate.backup
+infra/preview/terraform.tfvars
+infra/preview/*.tfvars
+infra/preview/.terraform.tfstate.lock.info
 
 # テスト・カバレッジ
 .coverage

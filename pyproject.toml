@@ -30,6 +30,7 @@ packages = ["src/galley"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+extend-exclude = ["config/templates"]
 
 [tool.ruff.format]
 quote-style = "double"

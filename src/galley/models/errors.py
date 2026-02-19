@@ -82,3 +82,27 @@ class InfraOperationInProgressError(GalleyError):
     def __init__(self, session_id: str) -> None:
         super().__init__(f"Infrastructure operation already in progress for session: {session_id}")
         self.session_id = session_id
+
+
+class TemplateNotFoundError(GalleyError):
+    """指定されたテンプレートが見つからない場合の例外。"""
+
+    def __init__(self, template_name: str) -> None:
+        super().__init__(f"Template not found: {template_name}")
+        self.template_name = template_name
+
+
+class ProtectedFileError(GalleyError):
+    """保護されたファイルの変更を拒否する例外。"""
+
+    def __init__(self, file_path: str) -> None:
+        super().__init__(f"Protected file cannot be modified: {file_path}")
+        self.file_path = file_path
+
+
+class AppNotScaffoldedError(GalleyError):
+    """アプリケーションが未生成の場合の例外。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Application not scaffolded for session: {session_id}")
+        self.session_id = session_id
