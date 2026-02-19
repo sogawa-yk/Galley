@@ -36,7 +36,7 @@ docker login kix.ocir.io -u '{namespace}/{username}'
 |----------|-----------|------|
 | Container Instance | `ocid1.containerinstance.oc1...` | |
 | API Gateway | `ocid1.apigateway.oc1...` | |
-| API Gateway ホスト名 | `https://xxx.apigateway.ap-tokyo-1.oci.customer-oci.com` | |
+| API Gateway ホスト名 | `https://xxx.apigateway.ap-osaka-1.oci.customer-oci.com` | |
 | URLトークン | （Terraform output参照） | `terraform output url_token` |
 | MCP エンドポイント | `https://{hostname}/mcp?token={token}` | Claude Desktop設定に使用 |
 | VCN | `ocid1.vcn.oc1...` | |
@@ -93,7 +93,7 @@ GALLEY_URL_TOKEN=mysecret python -m galley
 
 ```hcl
 compartment_ocid = "ocid1.compartment.oc1..aaaaaaaxxxxxxxxx"
-region           = "ap-tokyo-1"
+region           = "ap-osaka-1"
 image_tag        = "latest"
 ```
 
@@ -102,8 +102,8 @@ image_tag        = "latest"
 ```bash
 # 1. イメージビルド & プッシュ
 docker build -f docker/Dockerfile -t galley .
-docker tag galley ap-tokyo-1.ocir.io/{namespace}/galley:latest
-docker push ap-tokyo-1.ocir.io/{namespace}/galley:latest
+docker tag galley kix.ocir.io/{namespace}/galley:latest
+docker push kix.ocir.io/{namespace}/galley:latest
 
 # 2. Terraform apply
 cd deploy/
