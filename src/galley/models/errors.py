@@ -47,3 +47,38 @@ class ComponentNotFoundError(GalleyError):
 
 class StorageError(GalleyError):
     """ストレージ操作のエラー。"""
+
+
+class TerraformError(GalleyError):
+    """Terraform実行エラー。"""
+
+    def __init__(self, message: str, stderr: str, exit_code: int) -> None:
+        super().__init__(message)
+        self.stderr = stderr
+        self.exit_code = exit_code
+
+
+class OCICliError(GalleyError):
+    """OCI CLI実行エラー。"""
+
+    def __init__(self, message: str, command: str, stderr: str, exit_code: int) -> None:
+        super().__init__(message)
+        self.command = command
+        self.stderr = stderr
+        self.exit_code = exit_code
+
+
+class CommandNotAllowedError(GalleyError):
+    """ホワイトリスト外のコマンド実行を拒否する例外。"""
+
+    def __init__(self, command: str) -> None:
+        super().__init__(f"Command not allowed: {command}")
+        self.command = command
+
+
+class InfraOperationInProgressError(GalleyError):
+    """同一セッションで重量操作が実行中の場合の例外。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Infrastructure operation already in progress for session: {session_id}")
+        self.session_id = session_id

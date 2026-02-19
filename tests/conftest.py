@@ -7,6 +7,7 @@ import pytest
 from galley.config import ServerConfig
 from galley.services.design import DesignService
 from galley.services.hearing import HearingService
+from galley.services.infra import InfraService
 from galley.storage.service import StorageService
 
 
@@ -38,6 +39,12 @@ def hearing_service(storage: StorageService, config_dir: Path) -> HearingService
 def design_service(storage: StorageService, config_dir: Path) -> DesignService:
     """テスト用DesignService。"""
     return DesignService(storage=storage, config_dir=config_dir)
+
+
+@pytest.fixture
+def infra_service(storage: StorageService, config_dir: Path) -> InfraService:
+    """テスト用InfraService。"""
+    return InfraService(storage=storage, config_dir=config_dir)
 
 
 @pytest.fixture

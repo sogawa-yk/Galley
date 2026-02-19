@@ -10,9 +10,7 @@ from galley.models.errors import GalleyError
 from galley.services.hearing import HearingService
 
 
-def register_hearing_tools(
-    mcp: FastMCP, hearing_service: HearingService, *, config_dir: Path | None = None
-) -> None:
+def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, config_dir: Path | None = None) -> None:
     """ヒアリング関連のMCPツールを登録する。"""
 
     @mcp.tool()
