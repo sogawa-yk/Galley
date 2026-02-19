@@ -77,6 +77,9 @@
 - **repository-structure.md** - リポジトリ構造定義書
 - **development-guidelines.md** - 開発ガイドライン
 - **glossary.md** - ユビキタス言語定義
+- **environment.md** - 環境情報（OCID、OCIR URL、環境変数、デプロイ手順）
+
+> デプロイ・インフラ作業時は必ず `docs/environment.md` を参照すること。
 
 ### 作業単位のドキュメント(`.steering/`)
 
