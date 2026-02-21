@@ -33,6 +33,32 @@ class TestSaveArchitecture:
         assert len(arch.components) == 1
         assert arch.components[0].service_type == "oke"
 
+    async def test_save_architecture_resolves_temporary_connection_ids(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        arch = await design_service.save_architecture(
+            session_id,
+            components=[
+                {"id": "temp-oke", "service_type": "oke", "display_name": "OKE"},
+                {"id": "temp-adb", "service_type": "adb", "display_name": "ADB"},
+            ],
+            connections=[
+                {
+                    "source_id": "temp-oke",
+                    "target_id": "temp-adb",
+                    "connection_type": "private_endpoint",
+                    "description": "OKE to ADB",
+                }
+            ],
+        )
+        # 仮IDはUUIDに変換されているはず
+        assert arch.components[0].id != "temp-oke"
+        assert arch.components[1].id != "temp-adb"
+        # connectionsのIDもコンポーネントの実UUIDに変換されているはず
+        assert arch.connections[0].source_id == arch.components[0].id
+        assert arch.connections[0].target_id == arch.components[1].id
+
     async def test_save_architecture_raises_for_incomplete_hearing(
         self, hearing_service: HearingService, design_service: DesignService
     ) -> None:
@@ -250,11 +276,72 @@ class TestExportIac:
             components=[{"service_type": "oke", "display_name": "OKE"}],
             connections=[],
         )
-        files = await design_service.export_iac(session_id)
+        result = await design_service.export_iac(session_id)
+        files = result["terraform_files"]
         assert "main.tf" in files
         assert "variables.tf" in files
         assert "components.tf" in files
         assert "oci" in files["main.tf"]
+
+    async def test_export_iac_generates_real_resource_definitions(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "My OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_containerengine_cluster" in components_tf
+        assert "# TODO: Implement" not in components_tf
+
+    async def test_export_iac_uses_double_quotes_for_hcl(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # ダブルクォートが使われていること（シングルクォートではない）
+        assert '"10.0.0.0/16"' in components_tf
+
+    async def test_export_iac_writes_files_to_disk(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        from pathlib import Path
+
+        terraform_dir = Path(result["terraform_dir"])
+        assert terraform_dir.exists()
+        assert (terraform_dir / "main.tf").exists()
+        assert (terraform_dir / "variables.tf").exists()
+        assert (terraform_dir / "components.tf").exists()
+
+    async def test_export_iac_functions_generates_application_and_function(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "functions", "display_name": "My Function"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_functions_application" in components_tf
+        assert "oci_functions_function" in components_tf
 
 
 class TestExportAll:
@@ -271,3 +358,4 @@ class TestExportAll:
         assert "summary" in result
         assert "mermaid" in result
         assert "terraform_files" in result
+        assert "terraform_dir" in result

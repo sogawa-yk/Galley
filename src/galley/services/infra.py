@@ -115,12 +115,60 @@ class InfraService:
             return "No changes. Infrastructure is up-to-date."
         return None
 
-    async def run_terraform_plan(self, session_id: str, terraform_dir: str) -> TerraformResult:
+    async def _ensure_terraform_init(
+        self, terraform_dir: Path, calling_command: str = "plan"
+    ) -> TerraformResult | None:
+        """terraform initが未実行の場合に自動実行する。
+
+        Args:
+            terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            calling_command: 呼び出し元のコマンド名（エラー時のレスポンスに使用）。
+
+        Returns:
+            initが失敗した場合はTerraformResult、成功またはinit不要の場合はNone。
+        """
+        if (terraform_dir / ".terraform").exists():
+            return None
+        exit_code, stdout, stderr = await self._run_subprocess(
+            ["terraform", "init", "-no-color", "-input=false"],
+            cwd=str(terraform_dir),
+        )
+        if exit_code != 0:
+            return TerraformResult(
+                success=False,
+                command=calling_command,
+                stdout=stdout,
+                stderr=f"terraform init failed:\n{stderr}",
+                exit_code=exit_code,
+            )
+        return None
+
+    def _build_terraform_args(
+        self,
+        base_args: list[str],
+        variables: dict[str, str] | None = None,
+    ) -> list[str]:
+        """Terraformコマンド引数を構築する。"""
+        args = list(base_args)
+        if variables:
+            for key, value in variables.items():
+                args.extend(["-var", f"{key}={value}"])
+        return args
+
+    async def run_terraform_plan(
+        self,
+        session_id: str,
+        terraform_dir: str,
+        variables: dict[str, str] | None = None,
+    ) -> TerraformResult:
         """Terraform planを実行する。
+
+        init未実行の場合は自動的にterraform initを実行する。
 
         Args:
             session_id: セッションID。
             terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            variables: Terraform変数（-var key=value形式で渡される）。
 
         Returns:
             Terraform実行結果。
@@ -141,8 +189,16 @@ class InfraService:
             raise InfraOperationInProgressError(session_id)
 
         async with lock:
-            exit_code, stdout, stderr = await self._run_subprocess(
+            init_result = await self._ensure_terraform_init(validated_dir)
+            if init_result is not None:
+                return init_result
+
+            args = self._build_terraform_args(
                 ["terraform", "plan", "-no-color", "-input=false"],
+                variables,
+            )
+            exit_code, stdout, stderr = await self._run_subprocess(
+                args,
                 cwd=str(validated_dir),
             )
 
@@ -157,12 +213,20 @@ class InfraService:
             plan_summary=plan_summary,
         )
 
-    async def run_terraform_apply(self, session_id: str, terraform_dir: str) -> TerraformResult:
+    async def run_terraform_apply(
+        self,
+        session_id: str,
+        terraform_dir: str,
+        variables: dict[str, str] | None = None,
+    ) -> TerraformResult:
         """Terraform applyを実行する。
+
+        init未実行の場合は自動的にterraform initを実行する。
 
         Args:
             session_id: セッションID。
             terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            variables: Terraform変数（-var key=value形式で渡される）。
 
         Returns:
             Terraform実行結果。
@@ -183,8 +247,16 @@ class InfraService:
             raise InfraOperationInProgressError(session_id)
 
         async with lock:
-            exit_code, stdout, stderr = await self._run_subprocess(
+            init_result = await self._ensure_terraform_init(validated_dir, "apply")
+            if init_result is not None:
+                return init_result
+
+            args = self._build_terraform_args(
                 ["terraform", "apply", "-auto-approve", "-no-color", "-input=false"],
+                variables,
+            )
+            exit_code, stdout, stderr = await self._run_subprocess(
+                args,
                 cwd=str(validated_dir),
             )
 
@@ -196,12 +268,20 @@ class InfraService:
             exit_code=exit_code,
         )
 
-    async def run_terraform_destroy(self, session_id: str, terraform_dir: str) -> TerraformResult:
+    async def run_terraform_destroy(
+        self,
+        session_id: str,
+        terraform_dir: str,
+        variables: dict[str, str] | None = None,
+    ) -> TerraformResult:
         """Terraform destroyを実行する。
+
+        init未実行の場合は自動的にterraform initを実行する。
 
         Args:
             session_id: セッションID。
             terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            variables: Terraform変数（-var key=value形式で渡される）。
 
         Returns:
             Terraform実行結果。
@@ -222,8 +302,16 @@ class InfraService:
             raise InfraOperationInProgressError(session_id)
 
         async with lock:
-            exit_code, stdout, stderr = await self._run_subprocess(
+            init_result = await self._ensure_terraform_init(validated_dir, "destroy")
+            if init_result is not None:
+                return init_result
+
+            args = self._build_terraform_args(
                 ["terraform", "destroy", "-auto-approve", "-no-color", "-input=false"],
+                variables,
+            )
+            exit_code, stdout, stderr = await self._run_subprocess(
+                args,
                 cwd=str(validated_dir),
             )
 

@@ -33,7 +33,10 @@ class ArchitectureNotFoundError(GalleyError):
     """セッションにアーキテクチャが未設定の場合の例外。"""
 
     def __init__(self, session_id: str) -> None:
-        super().__init__(f"Architecture not found for session: {session_id}")
+        super().__init__(
+            f"Architecture not found for session: {session_id}. "
+            "Please call save_architecture first to create an architecture from the hearing results."
+        )
         self.session_id = session_id
 
 

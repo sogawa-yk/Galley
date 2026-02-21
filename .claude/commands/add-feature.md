@@ -100,9 +100,10 @@ description: 新機能を既存パターンに従って、完全に無停止で�
 
 1. 以下のコマンドを順番に実行し、全てのテストがパスすることを確認する。
   ```bash
-  Bash('npm test')
-  Bash('npm run lint')
-  Bash('npm run typecheck')
+  uv run pytest
+  uv run ruff check src/ tests/
+  uv run ruff format --check src/ tests/
+  uv run mypy src/
   ```
 2. いずれかのコマンドでエラーが発生した場合は、問題を分析し、修正コードを生成・適用してから、再度このステップを実行する。
 
@@ -125,7 +126,7 @@ description: 新機能を既存パターンに従って、完全に無停止で�
 このワークフローは、以下の全ての条件を満たした時点で自動的に完了となる。
 - ステップ5: `tasklist.md`の全てのタスクが完了状態（`[x]`または正当な理由でスキップ）になっている。
 - ステップ6: `implementation-validator`サブエージェントの検証をパスする。
-- ステップ7: `test`, `lint`, `typecheck`の全てのコマンドがエラーなく成功する。
+- ステップ7: `pytest`, `ruff check`, `ruff format`, `mypy`の全てのコマンドがエラーなく成功する。
 - ステップ8: `tasklist.md`に申し送り事項が記載されている。
 
 この完了条件を満たすまで、自律的に思考し、問題解決を行い、作業を継続すること。

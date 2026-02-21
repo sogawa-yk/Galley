@@ -1,5 +1,6 @@
 """アーキテクチャ設計の管理とバリデーションを行うサービス。"""
 
+import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +18,118 @@ from galley.models.errors import (
 from galley.models.validation import ValidationResult
 from galley.storage.service import StorageService
 from galley.validators.architecture import ArchitectureValidator
+
+# サービスタイプ → Terraform リソース定義テンプレートのマッピング
+_TF_RESOURCE_TEMPLATES: dict[str, str] = {
+    "vcn": """resource "oci_core_vcn" "{name}" {{
+  compartment_id = var.compartment_id
+  cidr_blocks    = ["{cidr_block}"]
+  display_name   = "{display_name}"
+}}""",
+    "compute": """resource "oci_core_instance" "{name}" {{
+  compartment_id      = var.compartment_id
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  shape               = "{shape}"
+  display_name        = "{display_name}"
+
+  shape_config {{
+    ocpus         = {ocpus}
+    memory_in_gbs = {memory_in_gbs}
+  }}
+
+  source_details {{
+    source_type = "image"
+    source_id   = var.image_id
+  }}
+
+  create_vnic_details {{
+    subnet_id = var.subnet_id
+  }}
+}}""",
+    "oke": """resource "oci_containerengine_cluster" "{name}" {{
+  compartment_id     = var.compartment_id
+  kubernetes_version = "{kubernetes_version}"
+  name               = "{display_name}"
+  vcn_id             = var.vcn_id
+
+  endpoint_config {{
+    is_public_ip_enabled = true
+    subnet_id            = var.subnet_id
+  }}
+}}""",
+    "adb": """resource "oci_database_autonomous_database" "{name}" {{
+  compartment_id           = var.compartment_id
+  db_name                  = "{db_name}"
+  display_name             = "{display_name}"
+  cpu_core_count           = {cpu_core_count}
+  data_storage_size_in_tbs = {storage_in_tbs}
+  db_workload              = "{workload_type}"
+  is_free_tier             = false
+}}""",
+    "apigateway": """resource "oci_apigateway_gateway" "{name}" {{
+  compartment_id = var.compartment_id
+  endpoint_type  = "{endpoint_type}"
+  subnet_id      = var.subnet_id
+  display_name   = "{display_name}"
+}}""",
+    "functions": """resource "oci_functions_application" "{name}_app" {{
+  compartment_id = var.compartment_id
+  display_name   = "{display_name}"
+  subnet_ids     = [var.subnet_id]
+}}
+
+resource "oci_functions_function" "{name}" {{
+  application_id = oci_functions_application.{name}_app.id
+  display_name   = "{display_name}"
+  memory_in_mbs  = {memory_in_mbs}
+  image          = var.function_image
+}}""",
+    "objectstorage": """resource "oci_objectstorage_bucket" "{name}" {{
+  compartment_id = var.compartment_id
+  namespace      = var.object_storage_namespace
+  name           = "{display_name}"
+  storage_tier   = "{storage_tier}"
+  versioning     = "{versioning}"
+}}""",
+    "loadbalancer": """resource "oci_load_balancer_load_balancer" "{name}" {{
+  compartment_id = var.compartment_id
+  display_name   = "{display_name}"
+  shape          = "{shape}"
+  subnet_ids     = [var.subnet_id]
+  is_private     = {is_private}
+}}""",
+    "streaming": """resource "oci_streaming_stream" "{name}" {{
+  compartment_id     = var.compartment_id
+  name               = "{display_name}"
+  partitions         = {partitions}
+  retention_in_hours = {retention_in_hours}
+}}""",
+    "nosql": """resource "oci_nosql_table" "{name}" {{
+  compartment_id = var.compartment_id
+  name           = "{display_name}"
+  ddl_statement  = "CREATE TABLE {display_name} (id STRING, data JSON, PRIMARY KEY(id))"
+
+  table_limits {{
+    max_read_units     = 50
+    max_write_units    = 50
+    max_storage_in_gbs = 25
+  }}
+}}""",
+}
+
+# サービスタイプごとのデフォルト設定値
+_TF_DEFAULTS: dict[str, dict[str, str]] = {
+    "vcn": {"cidr_block": "10.0.0.0/16"},
+    "compute": {"shape": "VM.Standard.E4.Flex", "ocpus": "1", "memory_in_gbs": "16"},
+    "oke": {"kubernetes_version": "v1.28"},
+    "adb": {"db_name": "galleydb", "cpu_core_count": "1", "storage_in_tbs": "1", "workload_type": "ATP"},
+    "apigateway": {"endpoint_type": "PUBLIC"},
+    "functions": {"memory_in_mbs": "256"},
+    "objectstorage": {"storage_tier": "Standard", "versioning": "Disabled"},
+    "loadbalancer": {"shape": "flexible", "is_private": "false"},
+    "streaming": {"partitions": "1", "retention_in_hours": "24"},
+    "nosql": {},
+}
 
 
 class DesignService:
@@ -66,8 +179,29 @@ class DesignService:
         if session.hearing_result is None:
             raise HearingNotCompletedError(session_id)
 
-        parsed_components = [Component.model_validate(c) for c in components]
-        parsed_connections = [Connection.model_validate(c) for c in connections]
+        # コンポーネントをパースし、仮ID→UUIDのマッピングを構築
+        id_mapping: dict[str, str] = {}
+        parsed_components: list[Component] = []
+        for comp_data in components:
+            original_id = comp_data.get("id", "")
+            is_temp_id = bool(original_id) and not self._is_uuid(original_id)
+            if is_temp_id:
+                # 仮IDの場合: idフィールドを除外してパース（新しいUUIDを生成させる）
+                comp_without_id = {k: v for k, v in comp_data.items() if k != "id"}
+                parsed = Component.model_validate(comp_without_id)
+                id_mapping[original_id] = parsed.id
+            else:
+                parsed = Component.model_validate(comp_data)
+            parsed_components.append(parsed)
+
+        # connectionsのsource_id/target_idを実UUIDに変換
+        resolved_connections: list[dict[str, Any]] = []
+        for conn_data in connections:
+            resolved = dict(conn_data)
+            resolved["source_id"] = id_mapping.get(resolved["source_id"], resolved["source_id"])
+            resolved["target_id"] = id_mapping.get(resolved["target_id"], resolved["target_id"])
+            resolved_connections.append(resolved)
+        parsed_connections = [Connection.model_validate(c) for c in resolved_connections]
 
         architecture = Architecture(
             session_id=session_id,
@@ -308,14 +442,64 @@ class DesignService:
 
         return "\n".join(lines)
 
-    async def export_iac(self, session_id: str) -> dict[str, str]:
+    @staticmethod
+    def _is_uuid(value: str) -> bool:
+        """文字列がUUID形式かどうかを判定する。"""
+        try:
+            uuid.UUID(value)
+            return True
+        except ValueError:
+            return False
+
+    def _format_hcl_value(self, value: Any) -> str:
+        """Python値をHCL形式の文字列に変換する。"""
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return json.dumps(str(value))
+
+    def _render_component_tf(self, comp: Component) -> str:
+        """コンポーネントからTerraformリソース定義を生成する。"""
+        service_type = comp.service_type
+        safe_name = comp.display_name.replace(" ", "_").replace("-", "_").lower()
+
+        template = _TF_RESOURCE_TEMPLATES.get(service_type)
+        if template is None:
+            # テンプレートがないサービスタイプはコメント付きプレースホルダー
+            config_lines = "\n".join(f"  # {k} = {self._format_hcl_value(v)}" for k, v in comp.config.items())
+            return (
+                f"# {comp.display_name} ({service_type})\n"
+                f'# TODO: No built-in template for service type "{service_type}"\n'
+                f'# resource "oci_{service_type}" "{safe_name}" {{\n'
+                f"#   compartment_id = var.compartment_id\n"
+                f"{config_lines}\n"
+                f"# }}"
+            )
+
+        # デフォルト値をマージしてテンプレートに渡すパラメータを構築
+        defaults = dict(_TF_DEFAULTS.get(service_type, {}))
+        params: dict[str, str] = {
+            "name": safe_name,
+            "display_name": comp.display_name,
+        }
+        params.update(defaults)
+        # コンポーネント設定でデフォルトを上書き
+        for k, v in comp.config.items():
+            params[k] = str(v)
+
+        return template.format(**params)
+
+    async def export_iac(self, session_id: str) -> dict[str, Any]:
         """IaCテンプレート（Terraform）を出力する。
+
+        Terraformファイルを生成し、セッションのデータディレクトリに書き出す。
 
         Args:
             session_id: セッションID。
 
         Returns:
-            ファイル名→内容のマッピング。
+            terraform_files（ファイル名→内容）とterraform_dir（書き出し先パス）を含む辞書。
 
         Raises:
             SessionNotFoundError: セッションが存在しない場合。
@@ -357,24 +541,24 @@ class DesignService:
         var_lines.append("}")
         files["variables.tf"] = "\n".join(var_lines)
 
-        # components.tf - コンポーネントごとのリソース定義スケルトン
+        # components.tf - コンポーネントごとのリソース定義
         comp_lines: list[str] = []
         comp_lines.append("# Auto-generated Terraform resource definitions")
         comp_lines.append(f"# Architecture: {session_id}")
         comp_lines.append(f"# Components: {len(arch.components)}")
         comp_lines.append("")
         for comp in arch.components:
-            safe_name = comp.display_name.replace(" ", "_").replace("-", "_").lower()
-            comp_lines.append(f"# {comp.display_name} ({comp.service_type})")
-            comp_lines.append(f"# TODO: Implement {comp.service_type} resource")
-            comp_lines.append(f'# resource "oci_{comp.service_type}" "{safe_name}" {{')
-            for key, value in comp.config.items():
-                comp_lines.append(f"#   {key} = {repr(value)}")
-            comp_lines.append("# }")
+            comp_lines.append(self._render_component_tf(comp))
             comp_lines.append("")
         files["components.tf"] = "\n".join(comp_lines)
 
-        return files
+        # セッションのデータディレクトリにファイルを書き出す
+        terraform_dir = self._storage.get_session_dir(session_id) / "terraform"
+        terraform_dir.mkdir(parents=True, exist_ok=True)
+        for filename, content in files.items():
+            (terraform_dir / filename).write_text(content, encoding="utf-8")
+
+        return {"terraform_files": files, "terraform_dir": str(terraform_dir)}
 
     async def export_all(self, session_id: str) -> dict[str, Any]:
         """全成果物を一括出力する。
@@ -391,10 +575,11 @@ class DesignService:
         """
         summary = await self.export_summary(session_id)
         mermaid = await self.export_mermaid(session_id)
-        terraform_files = await self.export_iac(session_id)
+        iac_result = await self.export_iac(session_id)
 
         return {
             "summary": summary,
             "mermaid": mermaid,
-            "terraform_files": terraform_files,
+            "terraform_files": iac_result["terraform_files"],
+            "terraform_dir": iac_result["terraform_dir"],
         }

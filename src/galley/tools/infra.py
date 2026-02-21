@@ -12,53 +12,71 @@ def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
     """インフラ関連のMCPツールを登録する。"""
 
     @mcp.tool()
-    async def run_terraform_plan(session_id: str, terraform_dir: str) -> dict[str, Any]:
+    async def run_terraform_plan(
+        session_id: str,
+        terraform_dir: str,
+        variables: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Terraform planを実行する。
 
         指定されたディレクトリでterraform planを実行し、結果を返します。
+        init未実行の場合は自動的にterraform initを実行します。
         LLMがエラーメッセージを解析してTerraformコードを修正→再実行する
         自動デバッグループに使用します。
 
         Args:
             session_id: セッションID。
             terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            variables: Terraform変数。{"region": "ap-osaka-1", "compartment_id": "ocid1..."} の形式で指定。
         """
         try:
-            result = await infra_service.run_terraform_plan(session_id, terraform_dir)
+            result = await infra_service.run_terraform_plan(session_id, terraform_dir, variables)
             return result.model_dump()
         except (GalleyError, ValueError) as e:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
-    async def run_terraform_apply(session_id: str, terraform_dir: str) -> dict[str, Any]:
+    async def run_terraform_apply(
+        session_id: str,
+        terraform_dir: str,
+        variables: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Terraform applyを実行する。
 
         指定されたディレクトリでterraform apply -auto-approveを実行し、
         OCIリソースをプロビジョニングします。
+        init未実行の場合は自動的にterraform initを実行します。
 
         Args:
             session_id: セッションID。
             terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            variables: Terraform変数。{"region": "ap-osaka-1", "compartment_id": "ocid1..."} の形式で指定。
         """
         try:
-            result = await infra_service.run_terraform_apply(session_id, terraform_dir)
+            result = await infra_service.run_terraform_apply(session_id, terraform_dir, variables)
             return result.model_dump()
         except (GalleyError, ValueError) as e:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
-    async def run_terraform_destroy(session_id: str, terraform_dir: str) -> dict[str, Any]:
+    async def run_terraform_destroy(
+        session_id: str,
+        terraform_dir: str,
+        variables: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Terraform destroyを実行する。
 
         指定されたディレクトリでterraform destroy -auto-approveを実行し、
         プロビジョニング済みのOCIリソースをクリーンアップします。
+        init未実行の場合は自動的にterraform initを実行します。
 
         Args:
             session_id: セッションID。
             terraform_dir: Terraformファイルが格納されたディレクトリパス。
+            variables: Terraform変数。{"region": "ap-osaka-1", "compartment_id": "ocid1..."} の形式で指定。
         """
         try:
-            result = await infra_service.run_terraform_destroy(session_id, terraform_dir)
+            result = await infra_service.run_terraform_destroy(session_id, terraform_dir, variables)
             return result.model_dump()
         except (GalleyError, ValueError) as e:
             return {"error": type(e).__name__, "message": str(e)}

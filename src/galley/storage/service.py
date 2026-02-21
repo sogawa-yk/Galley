@@ -29,6 +29,10 @@ class StorageService:
     def _session_file(self, session_id: str) -> Path:
         return self._session_dir(session_id) / "session.json"
 
+    def get_session_dir(self, session_id: str) -> Path:
+        """セッションのデータディレクトリパスを返す。"""
+        return self._session_dir(session_id)
+
     async def save_session(self, session: Session) -> None:
         """セッションをファイルシステムに保存する。"""
         session_dir = self._session_dir(session.id)

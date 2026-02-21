@@ -1,5 +1,6 @@
 """InfraServiceのユニットテスト。"""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -32,7 +33,10 @@ class TestRunTerraformPlan:
         session_id = await _create_session_with_architecture(hearing_service)
         stdout = "Plan: 3 to add, 0 to change, 0 to destroy.\n"
 
-        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
             mock_proc.return_value = (0, stdout, "")
             result = await infra_service.run_terraform_plan(session_id, "/tmp/tf")
 
@@ -48,7 +52,10 @@ class TestRunTerraformPlan:
     async def test_plan_failure(self, hearing_service: HearingService, infra_service: InfraService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
 
-        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
             mock_proc.return_value = (1, "", "Error: Invalid resource type")
             result = await infra_service.run_terraform_plan(session_id, "/tmp/tf")
 
@@ -60,13 +67,34 @@ class TestRunTerraformPlan:
     async def test_plan_no_changes(self, hearing_service: HearingService, infra_service: InfraService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
 
-        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
             mock_proc.return_value = (0, "No changes. Infrastructure is up-to-date.", "")
             result = await infra_service.run_terraform_plan(session_id, "/tmp/tf")
 
         assert result.success is True
         assert result.plan_summary is not None
         assert "No changes" in result.plan_summary
+
+    async def test_plan_with_variables(self, hearing_service: HearingService, infra_service: InfraService) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
+            mock_proc.return_value = (0, "Plan: 1 to add, 0 to change, 0 to destroy.\n", "")
+            result = await infra_service.run_terraform_plan(
+                session_id, "/tmp/tf", variables={"region": "ap-osaka-1", "compartment_id": "ocid1.test"}
+            )
+
+        assert result.success is True
+        called_args = mock_proc.call_args[0][0]
+        assert "-var" in called_args
+        assert "region=ap-osaka-1" in called_args
+        assert "compartment_id=ocid1.test" in called_args
 
     async def test_plan_raises_for_missing_architecture(
         self, hearing_service: HearingService, infra_service: InfraService
@@ -83,7 +111,10 @@ class TestRunTerraformApply:
     async def test_apply_success(self, hearing_service: HearingService, infra_service: InfraService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
 
-        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
             mock_proc.return_value = (0, "Apply complete!", "")
             result = await infra_service.run_terraform_apply(session_id, "/tmp/tf")
 
@@ -97,7 +128,10 @@ class TestRunTerraformApply:
     async def test_apply_failure(self, hearing_service: HearingService, infra_service: InfraService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
 
-        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
             mock_proc.return_value = (1, "", "Error: quota exceeded")
             result = await infra_service.run_terraform_apply(session_id, "/tmp/tf")
 
@@ -109,7 +143,10 @@ class TestRunTerraformDestroy:
     async def test_destroy_success(self, hearing_service: HearingService, infra_service: InfraService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
 
-        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+        with (
+            patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc,
+            patch.object(infra_service, "_ensure_terraform_init", new_callable=AsyncMock, return_value=None),
+        ):
             mock_proc.return_value = (0, "Destroy complete!", "")
             result = await infra_service.run_terraform_destroy(session_id, "/tmp/tf")
 
@@ -119,6 +156,64 @@ class TestRunTerraformDestroy:
             ["terraform", "destroy", "-auto-approve", "-no-color", "-input=false"],
             cwd="/tmp/tf",
         )
+
+
+class TestAutoTerraformInit:
+    async def test_auto_init_when_not_initialized(
+        self, hearing_service: HearingService, infra_service: InfraService, tmp_path: Path
+    ) -> None:
+        """init未実行時にterraform initが自動実行される。"""
+        session_id = await _create_session_with_architecture(hearing_service)
+        tf_dir = tmp_path / "tf"
+        tf_dir.mkdir()
+
+        calls: list[list[str]] = []
+
+        async def mock_subprocess(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+            calls.append(args)
+            if args[1] == "init":
+                return (0, "Initialized.", "")
+            return (0, "Plan: 1 to add, 0 to change, 0 to destroy.\n", "")
+
+        with patch.object(infra_service, "_run_subprocess", side_effect=mock_subprocess):
+            result = await infra_service.run_terraform_plan(session_id, str(tf_dir))
+
+        assert result.success is True
+        assert len(calls) == 2
+        assert calls[0][1] == "init"
+        assert calls[1][1] == "plan"
+
+    async def test_skip_init_when_already_initialized(
+        self, hearing_service: HearingService, infra_service: InfraService, tmp_path: Path
+    ) -> None:
+        """init済みの場合はterraform initがスキップされる。"""
+        session_id = await _create_session_with_architecture(hearing_service)
+        tf_dir = tmp_path / "tf"
+        tf_dir.mkdir()
+        (tf_dir / ".terraform").mkdir()
+
+        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+            mock_proc.return_value = (0, "Plan: 0 to add.\n", "")
+            result = await infra_service.run_terraform_plan(session_id, str(tf_dir))
+
+        assert result.success is True
+        mock_proc.assert_called_once()
+        assert mock_proc.call_args[0][0][1] == "plan"
+
+    async def test_init_failure_returns_error(
+        self, hearing_service: HearingService, infra_service: InfraService, tmp_path: Path
+    ) -> None:
+        """terraform init失敗時はエラー結果を返す。"""
+        session_id = await _create_session_with_architecture(hearing_service)
+        tf_dir = tmp_path / "tf"
+        tf_dir.mkdir()
+
+        with patch.object(infra_service, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
+            mock_proc.return_value = (1, "", "Error: Failed to install provider")
+            result = await infra_service.run_terraform_plan(session_id, str(tf_dir))
+
+        assert result.success is False
+        assert "terraform init failed" in result.stderr
 
 
 class TestTerraformDirValidation:

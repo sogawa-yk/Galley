@@ -48,9 +48,7 @@ class TestListTemplates:
 
 
 class TestScaffoldFromTemplate:
-    async def test_scaffold_creates_project(
-        self, hearing_service: HearingService, app_service: AppService
-    ) -> None:
+    async def test_scaffold_creates_project(self, hearing_service: HearingService, app_service: AppService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
         result = await app_service.scaffold_from_template(
             session_id, "rest-api-adb", {"app_name": "test-app", "app_port": "3000"}
@@ -62,13 +60,9 @@ class TestScaffoldFromTemplate:
         assert isinstance(files, list)
         assert len(files) > 0
 
-    async def test_scaffold_replaces_parameters(
-        self, hearing_service: HearingService, app_service: AppService
-    ) -> None:
+    async def test_scaffold_replaces_parameters(self, hearing_service: HearingService, app_service: AppService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
-        await app_service.scaffold_from_template(
-            session_id, "rest-api-adb", {"app_name": "my-cool-app"}
-        )
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {"app_name": "my-cool-app"})
 
         app_dir = app_service._app_dir(session_id)
         main_content = (app_dir / "main.py").read_text(encoding="utf-8")
@@ -114,15 +108,11 @@ class TestScaffoldFromTemplate:
 
 
 class TestUpdateAppCode:
-    async def test_update_app_code_success(
-        self, hearing_service: HearingService, app_service: AppService
-    ) -> None:
+    async def test_update_app_code_success(self, hearing_service: HearingService, app_service: AppService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
         await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
 
-        result = await app_service.update_app_code(
-            session_id, "src/routes.py", "# Updated routes\n"
-        )
+        result = await app_service.update_app_code(session_id, "src/routes.py", "# Updated routes\n")
 
         assert result["success"] is True
         assert "snapshot_id" in result
@@ -138,9 +128,7 @@ class TestUpdateAppCode:
         session_id = await _create_session_with_architecture(hearing_service)
         await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
 
-        result = await app_service.update_app_code(
-            session_id, "src/routes.py", "# Updated\n"
-        )
+        result = await app_service.update_app_code(session_id, "src/routes.py", "# Updated\n")
 
         snapshot_id = result["snapshot_id"]
         snapshots_dir = app_service._snapshots_dir(session_id)
@@ -182,9 +170,7 @@ class TestUpdateAppCode:
         with pytest.raises(ValueError, match="path contains"):
             await app_service.update_app_code(session_id, "../../../etc/passwd", "evil")
 
-    async def test_update_rejects_absolute_path(
-        self, hearing_service: HearingService, app_service: AppService
-    ) -> None:
+    async def test_update_rejects_absolute_path(self, hearing_service: HearingService, app_service: AppService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
         await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
 
@@ -213,17 +199,13 @@ class TestBuildAndDeploy:
 
 
 class TestCheckAppStatus:
-    async def test_check_status_not_deployed(
-        self, hearing_service: HearingService, app_service: AppService
-    ) -> None:
+    async def test_check_status_not_deployed(self, hearing_service: HearingService, app_service: AppService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
         status = await app_service.check_app_status(session_id)
         assert status.session_id == session_id
         assert status.status == "not_deployed"
 
-    async def test_check_status_after_scaffold(
-        self, hearing_service: HearingService, app_service: AppService
-    ) -> None:
+    async def test_check_status_after_scaffold(self, hearing_service: HearingService, app_service: AppService) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
         await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
         status = await app_service.check_app_status(session_id)

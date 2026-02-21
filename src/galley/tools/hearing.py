@@ -120,6 +120,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
                 "requirements": [r.model_dump() for r in result.requirements],
                 "constraints": result.constraints,
                 "completed_at": result.completed_at.isoformat(),
+                "next_step": "Use save_architecture to design the architecture based on the hearing results.",
             }
         except GalleyError as e:
             return {"error": type(e).__name__, "message": str(e)}
