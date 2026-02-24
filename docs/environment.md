@@ -88,13 +88,19 @@ GALLEY_URL_TOKEN=mysecret python -m galley
 | `container_instance_shape` | string | No | `CI.Standard.E4.Flex` | Container Instanceシェイプ |
 | `container_instance_ocpus` | number | No | `1` | OCPU数 |
 | `container_instance_memory_in_gbs` | number | No | `2` | メモリ(GB) |
+| `vcn_id` | string | Yes | - | 既存VCNのOCID |
+| `public_subnet_id` | string | Yes | - | パブリックサブネットOCID（API Gateway配置先） |
+| `private_subnet_id` | string | Yes | - | プライベートサブネットOCID（Container Instance配置先） |
 
 ### `terraform.tfvars` の例
 
 ```hcl
-compartment_ocid = "ocid1.compartment.oc1..aaaaaaaxxxxxxxxx"
-region           = "ap-osaka-1"
-image_tag        = "latest"
+compartment_ocid   = "ocid1.compartment.oc1..aaaaaaaxxxxxxxxx"
+region             = "ap-osaka-1"
+image_tag          = "latest"
+vcn_id             = "ocid1.vcn.oc1.ap-osaka-1.xxxxx"
+public_subnet_id   = "ocid1.subnet.oc1.ap-osaka-1.xxxxx"
+private_subnet_id  = "ocid1.subnet.oc1.ap-osaka-1.xxxxx"
 ```
 
 ## デプロイ手順（クイックリファレンス）
@@ -126,10 +132,21 @@ terraform output mcp_endpoint_url
 
 ## ネットワーク構成
 
-| リソース | CIDR / ポート | 備考 |
-|----------|--------------|------|
-| VCN | `10.0.0.0/16` | |
-| パブリックサブネット | `10.0.1.0/24` | API Gateway配置 |
-| プライベートサブネット | `10.0.2.0/24` | Container Instance配置 |
-| HTTPS (インバウンド) | `443` | パブリックサブネット |
-| アプリケーション (内部) | `8000` | パブリック → プライベート |
+既存のdev VCNを共有利用し、NSG（Network Security Group）でアクセス制御を行う。
+
+| リソース | 値 | 備考 |
+|----------|-----|------|
+| VCN (dev共有) | `ocid1.vcn.oc1.ap-osaka-1.amaaaaaassl65iqafqve544bt2wayj3jf6olowqr3yk6zihymlbins3fpcuq` | 自己完結型VCNではなく既存VCNを利用 |
+| パブリックサブネット | `ocid1.subnet.oc1.ap-osaka-1.aaaaaaaaglwephjxiehwwnk5ilxt4vialqxehlnxtnyrfm27vquyauaccl5q` | API Gateway配置 |
+| プライベートサブネット | `ocid1.subnet.oc1.ap-osaka-1.aaaaaaaaf52subnniec4uqsa3duqjfrpvwr5jzejlysgeljtptf6bm5atn2q` | Container Instance配置 |
+
+### NSG (Network Security Group)
+
+Security Listではなく**NSG**を使用。リソース（VNIC）に直接紐付くため、既存のdev VCNサブネット設定に影響しない。
+
+| NSG | ルール | 備考 |
+|-----|--------|------|
+| `galley-public-nsg` | Ingress: TCP 443 from 0.0.0.0/0 | API Gateway用 |
+| | Egress: All to 0.0.0.0/0 | |
+| `galley-private-nsg` | Ingress: TCP 8000 from パブリックサブネットCIDR | Container Instance用 |
+| | Egress: All to 0.0.0.0/0 | |

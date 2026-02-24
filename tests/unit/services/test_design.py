@@ -343,6 +343,79 @@ class TestExportIac:
         assert "oci_functions_application" in components_tf
         assert "oci_functions_function" in components_tf
 
+    async def test_export_iac_compute_adds_dynamic_variables(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "compute", "display_name": "Web Server"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "image_id"' in variables_tf
+        assert 'variable "subnet_id"' in variables_tf
+
+    async def test_export_iac_compute_adds_data_source(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "compute", "display_name": "Web Server"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        main_tf = result["terraform_files"]["main.tf"]
+        assert "oci_identity_availability_domains" in main_tf
+
+    async def test_export_iac_deduplicates_variables(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """複数コンポーネントが同じ変数を要求する場合、重複しないことを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "oke", "display_name": "OKE"},
+                {"service_type": "apigateway", "display_name": "API GW"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        # subnet_idは1回だけ宣言される
+        assert variables_tf.count('variable "subnet_id"') == 1
+
+    async def test_export_iac_vcn_no_extra_variables(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCNのみの場合は追加変数が不要。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "vcn", "display_name": "VCN"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "subnet_id"' not in variables_tf
+        assert 'variable "image_id"' not in variables_tf
+
+    async def test_export_iac_objectstorage_adds_namespace_variable(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "objectstorage", "display_name": "Bucket"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "object_storage_namespace"' in variables_tf
+
 
 class TestExportAll:
     async def test_export_all_returns_all_formats(

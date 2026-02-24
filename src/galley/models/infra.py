@@ -5,12 +5,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+TerraformCommand = Literal["plan", "apply", "destroy"]
+
 
 class TerraformResult(BaseModel):
     """Terraform実行結果。"""
 
     success: bool
-    command: Literal["plan", "apply", "destroy"]
+    command: TerraformCommand
     stdout: str
     stderr: str
     exit_code: int

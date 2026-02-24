@@ -1,112 +1,29 @@
-# Galley MCP Server デバッグフィードバックレポート
+# Galley MCP サーバー Terraform ワークフロー フィードバック
 
-**セッションID:** `5fcaf1fc-52c7-49f4-83ae-8b3525d77341`
-**日時:** 2026-02-19
-**テストシナリオ:** OCI Functionsパフォーマンス検証環境のヒアリング → アーキテクチャ設計 → Terraform生成・実行
-
----
-
-## 1. ヒアリングフェーズ（問題なし）
-
-`create_session` → `get_hearing_questions` → `get_hearing_flow` → `save_answers_batch` → `complete_hearing` の一連のフローは正常に動作しました。特に問題はありません。
+**日付:** 2026-02-24
+**セッションID:** `c9368ea7-0a2a-44bb-8a38-a072f713a5c8`
+**検証シナリオ:** 開発・検証用 Compute Instance + Autonomous Database (ATP) の構築
 
 ---
 
-## 2. アーキテクチャ設計フェーズ（軽微な問題あり）
+## 概要
 
-### 2.1 `export_iac` の前提条件エラーメッセージ
-
-**問題:** ヒアリング完了後に `export_iac` を呼ぶと `ArchitectureNotFoundError` が返る。ヒアリング結果からアーキテクチャが自動生成されるわけではなく、`save_architecture` を明示的に呼ぶ必要があることがLLMには分からない。
-
-**再現手順:**
-1. `complete_hearing` でヒアリング完了
-2. 直後に `export_iac` を呼ぶ
-
-**期待される動作案:**
-- `export_iac` のエラーメッセージに「先に `save_architecture` を実行してください」等のガイダンスを含める
-- または `complete_hearing` のレスポンスに「次のステップ: `save_architecture` でアーキテクチャを保存してください」を含める
-
-### 2.2 `save_architecture` の `connections` における ID 指定の曖昧さ
-
-**問題:** `save_architecture` の `connections` パラメータで `source_id` / `target_id` に何を指定すべきか不明確。`save_architecture` は **コンポーネントをこれから作成する** APIなので、呼び出し時点ではコンポーネントIDが存在しない。LLMは便宜的に `"apigateway-1"`, `"functions-1"` のような仮IDを使ったが、レスポンスで返された実際のIDは UUID だった。
-
-**実際の挙動:**
-- リクエスト: `source_id: "apigateway-1"`, `target_id: "functions-1"`
-- レスポンスのコンポーネントID: `3cf38cf2-...`, `7e73f4b3-...`, `a4b0d4f1-...`
-- connections はリクエストで渡した仮IDがそのまま保存された
-
-**提案:**
-- connections で components 配列のインデックスを参照する方式にする（例: `source_index: 2, target_index: 1`）
-- または components と connections を別々のAPI呼び出しにし、`add_component` の戻り値IDを `connections` で使う
-- あるいは、レスポンス時に仮IDを実際のUUIDにマッピングし直す
+ヒアリング → アーキテクチャ設計 → Terraform生成 → plan/apply のワークフローを検証した結果、主に Terraform 実行周りで複数の問題が確認されました。以下に問題点と改善提案をまとめます。
 
 ---
 
-## 3. Terraformテンプレート生成フェーズ（要改善）
+## 1. 【P0 ブロッカー】`terraform init` が実行できない
 
-### 3.1 `export_iac` の出力がスケルトンのみ
+### 問題
 
-**問題:** `export_iac` が返すTerraformコードは `# TODO: Implement` のコメント付きスケルトンのみ。実際に動作するリソース定義は含まれておらず、LLMが全てのTerraformコードをゼロから書く必要がある。
+`run_terraform_plan` / `run_terraform_apply` のどちらも、事前に `terraform init` が完了していることを前提としていますが、init を実行する手段が提供されていません。
 
-**返されたcomponents.tf:**
-```hcl
-# Test VCN (vcn)
-# TODO: Implement vcn resource
-# resource "oci_vcn" "test_vcn" {
-#   cidr_block = '10.0.0.0/16'
-# }
-```
+- `run_oci_cli` は `terraform` コマンドを許可しない（`CommandNotAllowedError`）
+- `run_terraform_plan` は内部で init を自動実行しない
+- `.terraform.lock.hcl` を手動配置しても、provider プラグイン本体が存在しないため失敗
 
-**影響:**
-- LLMが正確なOCI Terraform Providerのリソース名・属性を全て知っている前提になる
-- ネットワーク周辺リソース（サブネット、ルートテーブル、セキュリティリスト、ゲートウェイ等）は `save_architecture` のコンポーネントに含まれていなくても必要だが、テンプレートには含まれない
-- OCI Functions には Application → Function の2階層が必要だが、テンプレートのスケルトンは `oci_functions` という存在しないリソース名を示唆している（正しくは `oci_functions_application` + `oci_functions_function`）
+### エラーログ
 
-**提案:**
-- サービスタイプごとに、動作するTerraformリソース定義のテンプレートを内蔵する
-- 暗黙的に必要なリソース（VCN→サブネット、Functions→Application等）も自動的に含める
-- 少なくともリソース名は正確なOCI Provider名にする
-
-### 3.2 テンプレートのシンタックスエラー
-
-**問題:** スケルトン内のコメントに `'10.0.0.0/16'`（シングルクォート）が使われている。HCLではダブルクォートが正しい。LLMがこれをそのまま使うとシンタックスエラーになる。
-
----
-
-## 4. Terraform実行フェーズ（重大な問題あり）
-
-### 4.1 `run_terraform_plan` のファイルパス解決 — 最も深刻な問題
-
-**問題:** MCP server（Python FastMCPプロセス）のファイルシステムとLLMツール環境（Dockerコンテナ）のファイルシステムが分離されており、LLM側で作成したファイルをMCP server側の `run_terraform_plan` で参照できない。
-
-**再現手順と試行錯誤の詳細:**
-
-| 試行 | `terraform_dir` の値 | MCPが解決したパス | 結果 |
-|------|----------------------|-------------------|------|
-| 1 | `/home/claude/terraform` | `/home/claude/terraform` | `[Errno 2] No such file or directory` |
-| 2 | `terraform` | `/app/terraform` | `[Errno 2] No such file or directory` |
-| 3 | `/app/terraform` | `/app/terraform` | `[Errno 2] No such file or directory` |
-| 4 | `/tmp/terraform` | `/tmp/terraform` | `[Errno 2] No such file or directory` |
-
-**補足:** 試行2から、MCP serverが相対パスを `/app/` をベースとして解決していることが判明（`terraform` → `/app/terraform`）。しかし `/app/terraform` は MCP server のコンテナ/プロセス内には存在しない。
-
-**根本原因:** `export_iac` で返されるTerraformコードはJSON文字列としてレスポンスに含まれるだけで、MCP server側のファイルシステムには書き込まれない。一方 `run_terraform_plan` はMCP server側のファイルシステム上の実ファイルを期待する。この2つのツールの間にファイルを橋渡しするメカニズムがない。
-
-**回避策として試みたこと:**
-1. `scaffold_from_template` で `rest-api-adb` テンプレートをスキャフォールドし、`/data/sessions/{session_id}/app/` にファイルを生成
-2. `update_app_code` で `terraform/main.tf`, `terraform/variables.tf`, `terraform/components.tf` をサーバー側に作成
-3. `run_terraform_plan` に `/data/sessions/{session_id}/app/terraform` を指定 → **成功（パスは解決された）**
-
-**提案（優先度高）:**
-- **案A:** `export_iac` 実行時にMCP server側のファイルシステムにもTerraformファイルを自動的に書き出し、書き出し先パスをレスポンスに含める。`run_terraform_plan` はそのパスをそのまま受け取れるようにする
-- **案B:** `run_terraform_plan` にTerraformコードをインラインで渡せるパラメータを追加する（一時ディレクトリに書き出して実行）
-- **案C:** `write_terraform_files(session_id, files: dict)` のような専用ツールを追加し、`export_iac` → `write_terraform_files` → `run_terraform_plan` のフローにする
-
-### 4.2 `terraform init` が実行されない
-
-**問題:** `run_terraform_plan` の前に `terraform init` が必要だが、Galleyにはinitを実行するツールがない。
-
-**エラーメッセージ:**
 ```
 Error: Inconsistent dependency lock file
   - provider registry.terraform.io/oracle/oci: required by this configuration but no version is selected
@@ -114,97 +31,121 @@ To make the initial dependency selections that will initialize the dependency lo
   terraform init
 ```
 
-**提案:**
-- `run_terraform_plan` 内部で自動的に `terraform init` を実行する（init未実行を検知した場合）
-- または `run_terraform_init` ツールを追加する
-- **推奨:** planの前に自動initが最もシンプルで、LLM側のツール呼び出し回数を減らせる
+### 提案
 
-### 4.3 Terraform変数の渡し方
-
-**問題:** `run_terraform_plan` に変数値（`-var` や `-var-file`）を渡す手段がない。検証環境でもregion/compartment_id/tenancy_ocidは必須。
-
-**回避策:** variables.tf に `default` 値を設定したが、実運用では不適切（OCIDがハードコードされる）。
-
-**提案:**
-- `run_terraform_plan` に `variables: dict` パラメータを追加し、内部で `-var key=value` に変換する
-- またはセッションに紐づくOCI設定（region, compartment_id等）を保持し、自動的にtfvarsとして渡す
-- ヒアリング時に取得したOCI接続情報をTerraform実行時に自動注入する仕組み
-
-### 4.4 `run_oci_cli` でのTerraformコマンド実行
-
-**問題:** 最後の手段として `run_oci_cli` で `cd ... && terraform init` を試みたが、`run_oci_cli` は「許可されたサービスコマンドのみ実行可能」とドキュメントにあり、任意のシェルコマンドは実行不可と推測される。
-
-**提案:** これは意図通りの制限だと思われるが、上記4.2のinit問題が解決されれば不要。
+- **案A（推奨）:** `run_terraform_plan` の内部で `terraform init -input=false` を自動実行する
+- **案B:** `run_terraform_init` ツールを新規追加する
 
 ---
 
-## 5. テンプレートシステムの制約
+## 2. 【P1】ファイル配置パスが不明瞭
 
-### 5.1 OCI Functions用テンプレートの不在
+### 問題
 
-**問題:** `list_templates` で返されるテンプレートは `rest-api-adb` の1つのみ。OCI Functionsの検証が目的なのにFunctions用テンプレートがなく、無関係な `rest-api-adb` をスキャフォールドしてファイルパスを確保する必要があった。
+`run_terraform_plan` の `terraform_dir` パラメータにどのパスを渡すべきかが分かりづらく、試行錯誤が必要でした。
 
-**提案:**
-- サーバーレス（Functions + API Gateway）テンプレートの追加
-- 最低限、空のプロジェクトを作れる「blank」テンプレートの追加
-- テンプレート不要でもTerraformファイルを配置できるメカニズム（上記4.1の提案参照）
+| 試行 | パス | 結果 |
+|------|------|------|
+| 1 | `/home/claude/terraform` | `No such file or directory`（ツール側ファイルシステムが別） |
+| 2 | `terraform`（相対パス） | `/app/terraform` に解決されて失敗 |
+| 3 | `/data/sessions/{id}/app/terraform` | ファイルに到達（ただし init 未実行で失敗） |
 
-### 5.2 `update_app_code` の前提条件
+### 提案
 
-**問題:** `update_app_code` は `scaffold_from_template` 済みでないと `AppNotScaffoldedError` になる。Terraformファイルを直接サーバーに配置する手段がこのツール経由しかないため、無関係なテンプレートをスキャフォールドせざるを得なかった。
+- `export_iac` のレスポンスに **`terraform_dir` のフルパス**を含める
+- または `run_terraform_plan` が `session_id` からパスを自動解決する設計にする（`terraform_dir` パラメータを不要にする）
 
 ---
 
-## 6. ワークフロー全体の設計に関する提案
+## 3. 【P1】`export_iac` がスケルトン（コメントアウト）のみ
 
-### 6.1 理想的なワークフロー（提案）
+### 問題
 
-```
-create_session
-    ↓
-get_hearing_questions + get_hearing_flow
-    ↓
-save_answers_batch (対話的に回答収集)
-    ↓
-complete_hearing
-    ↓
-save_architecture (ヒアリング結果からアーキテクチャ設計)
-    ↓
-generate_terraform (★新規: 動作するTerraformコードを自動生成しサーバー側に配置)
-    ↓                   戻り値: terraform_dir パス
-run_terraform_plan (★自動init付き、変数は自動注入)
-    ↓
-[エラー時] LLMがコード修正 → update_terraform_file → re-plan ループ
-    ↓
-run_terraform_apply
+`export_iac` が返す `components.tf` は全リソースが TODO コメントになっており、そのままでは使用できません。
+
+```hcl
+# Dev Compute Instance (compute)
+# TODO: Implement compute resource
+# resource "oci_compute" "dev_compute_instance" {
+#   shape = 'VM.Standard.E4.Flex'
+# }
 ```
 
-### 6.2 現状のボトルネックまとめ
+LLM が全リソースを正しい OCI Terraform 構文で書き直す必要があり、エラーが混入しやすくなります。
 
-| 問題 | 影響度 | 修正難易度 |
-|------|--------|-----------|
-| export_iac → run_terraform_plan のファイル橋渡し不在 | 🔴 致命的 | 中 |
-| terraform init 自動実行なし | 🔴 致命的 | 低 |
-| Terraform変数の渡し方がない | 🟡 高 | 低 |
-| export_iac のスケルトンが不完全 | 🟡 高 | 中〜高 |
-| Functions用テンプレートなし | 🟡 中 | 中 |
-| save_architecture の connection ID 問題 | 🟢 低 | 低 |
-| export_iac スケルトンのシンタックス（シングルクォート） | 🟢 低 | 低 |
+### 提案
+
+サービスタイプごとに**実際に動作するリソース定義**を生成する。例：
+
+- `compute` → `oci_core_instance` + `oci_core_vcn` + `oci_core_subnet` 等の依存リソース
+- `adb` → `oci_database_autonomous_database`
+- `vcn` → `oci_core_vcn` + `oci_core_internet_gateway` + `oci_core_route_table` + `oci_core_security_list`
+
+VCN/Subnet/IGW/Route Table/Security List などの必須ネットワークリソースは自動的に含めるとよいです。
 
 ---
 
-## 7. 正常に動作した部分（ポジティブフィードバック）
+## 4. 【P2】ヒアリング完了 → アーキテクチャ保存の断絶
 
-- **ヒアリングフロー全体** — `create_session` → `complete_hearing` までスムーズ
-- **`save_answers_batch`** — 複数回答の一括保存が便利
-- **`list_available_services`** — 利用可能サービス一覧のconfig_schemaがLLMのアーキテクチャ設計に非常に有用
-- **`save_architecture`** — コンポーネントの保存自体は正常動作
-- **`update_app_code`** — scaffold済みであればファイル配置が機能する（スナップショット付きで安全）
-- **`run_terraform_plan` のエラー出力** — stderrが正確に返されるため、LLMによるデバッグループは機能する（パス問題さえ解決すれば）
-- **エラーメッセージの質** — 全体的にエラーメッセージが明確で、LLMが原因特定しやすい
+### 問題
+
+`complete_hearing` 後に `export_iac` を呼ぶと `ArchitectureNotFoundError` が発生しました。ヒアリング完了からアーキテクチャ保存への自動連携がないため、LLM が `save_architecture` を明示的に呼ぶ必要があります。
+
+### フロー上のギャップ
+
+```
+complete_hearing → (ギャップ) → save_architecture → export_iac
+                   ^^^^^^^^^^^^^^
+                   ここが暗黙的で、ドキュメントにも記載なし
+```
+
+### 提案
+
+- `complete_hearing` のレスポンスに次のステップとして `save_architecture` を案内する
+- または `complete_hearing` 時にヒアリング結果から推奨アーキテクチャを自動生成・保存するオプションを追加する
+
+---
+
+## 5. 【P2】plan 実行時の変数注入の仕組みがない
+
+### 問題
+
+`terraform plan` は必須変数が未設定だとエラーになります。検証（dry-run）目的で plan を回す際、ダミー値を注入する仕組みがありません。
+
+```
+Error: No value for required variable
+  on variables.tf line 1:
+   1: variable "region" {
+```
+
+### 提案
+
+- `run_terraform_plan` に `variables` パラメータを追加し、key-value で変数を渡せるようにする
+- またはセッションのヒアリング結果（例: region）から `terraform.tfvars` を自動生成する
+
+---
+
+## 優先度サマリー
+
+| 優先度 | 項目 | 影響 |
+|--------|------|------|
+| **P0** | `terraform init` が実行できない | plan/apply が完全にブロックされる |
+| **P1** | ファイル配置パスが不明瞭 | LLM の試行錯誤が増え、トークン浪費 |
+| **P1** | `export_iac` がスケルトンのみ | LLM のコード生成エラーリスク増大 |
+| **P2** | ヒアリング → アーキテクチャ保存の断絶 | ワークフローの分かりづらさ |
+| **P2** | plan 時の変数注入の仕組み | dry-run 検証ができない |
+
+---
+
+## 補足: 正常に動作した部分
+
+- ヒアリングフロー（`create_session` → `get_hearing_questions` → `save_answers_batch` → `complete_hearing`）は問題なく動作
+- `save_architecture` によるアーキテクチャ保存は正常
+- `export_summary` / `export_mermaid` による成果物出力は正常
+- `scaffold_from_template` + `update_app_code` によるファイル配置は正常
 
 ---
 ## 対応結果
-- **対応日**: 2026-02-19
-- **ステアリング**: `.steering/20260219-feedback-fix/`
-- **対応内容の要約**: フィードバックの優先度「致命的」〜「低」の全7問題に対応。`ArchitectureNotFoundError`のガイダンス追加、`complete_hearing`レスポンスの`next_step`追加、`save_architecture`の仮ID→UUID自動解決、`export_iac`のTerraformテンプレート実装（10サービスタイプ対応）・ファイル書き出し・`terraform_dir`返却、`terraform init`自動実行、`variables`パラメータ追加。全190テストパス。
+- **対応日**: 2026-02-24
+- **ステアリング**: `.steering/20260224-terraform-workflow-feedback/`
+- **対応内容の要約**: フィードバック5件（P0: terraform init自動実行、P1: terraform_dirパス返却、P1: export_iac実リソース生成、P2: complete_hearing→save_architecture案内、P2: Terraform変数注入）は全て実装済みであることを確認。追加で実装検証により発見された型安全性の問題（`_ensure_terraform_init`のパラメータ型、middleware/hearing.pyの型注釈）とlint違反（e2eテストの未使用import・行長超過）を修正。全195テストパス、ruff check/format/mypyクリア。

@@ -12,10 +12,11 @@ resource "random_password" "url_token" {
 # ============================================================
 
 resource "oci_apigateway_gateway" "galley" {
-  compartment_id = var.compartment_ocid
-  display_name   = "${local.name_prefix}-apigw"
-  endpoint_type  = "PUBLIC"
-  subnet_id      = oci_core_subnet.public.id
+  compartment_id             = var.compartment_ocid
+  display_name               = "${local.name_prefix}-apigw"
+  endpoint_type              = "PUBLIC"
+  subnet_id                  = var.public_subnet_id
+  network_security_group_ids = [oci_core_network_security_group.public.id]
 }
 
 # ============================================================

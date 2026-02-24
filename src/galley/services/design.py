@@ -117,6 +117,38 @@ resource "oci_functions_function" "{name}" {{
 }}""",
 }
 
+# サービスタイプ → 必要な追加Terraform変数のマッピング
+_TF_REQUIRED_VARS: dict[str, list[dict[str, str]]] = {
+    "compute": [
+        {"name": "image_id", "description": "Compute instance image OCID", "type": "string"},
+        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
+    ],
+    "oke": [
+        {"name": "vcn_id", "description": "VCN OCID", "type": "string"},
+        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
+    ],
+    "apigateway": [
+        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
+    ],
+    "functions": [
+        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
+        {"name": "function_image", "description": "Function container image URI", "type": "string"},
+    ],
+    "loadbalancer": [
+        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
+    ],
+    "objectstorage": [
+        {"name": "object_storage_namespace", "description": "Object Storage namespace", "type": "string"},
+    ],
+}
+
+# サービスタイプ → 必要なTerraform data sourceブロックのマッピング
+_TF_REQUIRED_DATA_SOURCES: dict[str, list[str]] = {
+    "compute": [
+        'data "oci_identity_availability_domains" "ads" {\n  compartment_id = var.compartment_id\n}',
+    ],
+}
+
 # サービスタイプごとのデフォルト設定値
 _TF_DEFAULTS: dict[str, dict[str, str]] = {
     "vcn": {"cidr_block": "10.0.0.0/16"},
@@ -528,7 +560,7 @@ class DesignService:
         main_lines.append("}")
         files["main.tf"] = "\n".join(main_lines)
 
-        # variables.tf
+        # variables.tf - 基本変数 + コンポーネントが必要とする追加変数
         var_lines: list[str] = []
         var_lines.append('variable "region" {')
         var_lines.append('  description = "OCI region"')
@@ -539,7 +571,33 @@ class DesignService:
         var_lines.append('  description = "Compartment OCID"')
         var_lines.append("  type        = string")
         var_lines.append("}")
+
+        # コンポーネントに応じた追加変数を収集（重複排除）
+        seen_vars: set[str] = set()
+        for comp in arch.components:
+            for var_def in _TF_REQUIRED_VARS.get(comp.service_type, []):
+                var_name = var_def["name"]
+                if var_name not in seen_vars:
+                    seen_vars.add(var_name)
+                    var_lines.append("")
+                    var_lines.append(f'variable "{var_name}" {{')
+                    var_lines.append(f'  description = "{var_def["description"]}"')
+                    var_lines.append(f"  type        = {var_def['type']}")
+                    var_lines.append("}")
+
         files["variables.tf"] = "\n".join(var_lines)
+
+        # コンポーネントに応じたdata sourceブロックをmain.tfに追加
+        data_source_blocks: list[str] = []
+        seen_data_sources: set[str] = set()
+        for comp in arch.components:
+            for ds_block in _TF_REQUIRED_DATA_SOURCES.get(comp.service_type, []):
+                if ds_block not in seen_data_sources:
+                    seen_data_sources.add(ds_block)
+                    data_source_blocks.append(ds_block)
+
+        if data_source_blocks:
+            files["main.tf"] += "\n\n" + "\n\n".join(data_source_blocks)
 
         # components.tf - コンポーネントごとのリソース定義
         comp_lines: list[str] = []

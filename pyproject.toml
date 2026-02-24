@@ -47,6 +47,11 @@ packages = ["galley"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--ignore=tests/e2e"
+markers = [
+    "e2e: E2Eテスト（実terraform/OCI接続が必要）",
+    "e2e_lifecycle: 実OCIリソースを作成するE2Eテスト",
+]
 
 [dependency-groups]
 dev = [

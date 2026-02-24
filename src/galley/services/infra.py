@@ -10,7 +10,7 @@ from galley.models.errors import (
     CommandNotAllowedError,
     InfraOperationInProgressError,
 )
-from galley.models.infra import CLIResult, TerraformResult
+from galley.models.infra import CLIResult, TerraformCommand, TerraformResult
 from galley.storage.service import StorageService
 
 # terraform_dirで禁止するパスパターン
@@ -116,7 +116,7 @@ class InfraService:
         return None
 
     async def _ensure_terraform_init(
-        self, terraform_dir: Path, calling_command: str = "plan"
+        self, terraform_dir: Path, calling_command: TerraformCommand = "plan"
     ) -> TerraformResult | None:
         """terraform initが未実行の場合に自動実行する。
 

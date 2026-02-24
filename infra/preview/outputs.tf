@@ -35,5 +35,5 @@ output "container_instance_private_ip" {
 
 output "vcn_id" {
   description = "VCNのOCID"
-  value       = oci_core_vcn.galley.id
+  value       = var.vcn_id
 }

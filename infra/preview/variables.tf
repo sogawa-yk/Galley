@@ -53,3 +53,18 @@ variable "container_instance_memory_in_gbs" {
   type        = number
   default     = 2
 }
+
+variable "vcn_id" {
+  description = "既存VCNのOCID"
+  type        = string
+}
+
+variable "public_subnet_id" {
+  description = "既存パブリックサブネットのOCID（API Gateway配置先）"
+  type        = string
+}
+
+variable "private_subnet_id" {
+  description = "既存プライベートサブネットのOCID（Container Instance配置先）"
+  type        = string
+}
