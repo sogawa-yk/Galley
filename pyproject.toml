@@ -5,6 +5,7 @@ description = "OCI presales support MCP server"
 requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=2.0",
+    "oci>=2.0",
     "pydantic>=2.0,<3",
     "pydantic-settings>=2.0,<3",
     "pyyaml>=6.0",
@@ -43,6 +44,10 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["galley"]
+
+[[tool.mypy.overrides]]
+module = ["oci", "oci.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

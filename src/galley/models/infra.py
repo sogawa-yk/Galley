@@ -8,6 +8,15 @@ from pydantic import BaseModel, Field
 TerraformCommand = Literal["plan", "apply", "destroy"]
 
 
+class TerraformErrorDetail(BaseModel):
+    """Terraformエラーの構造化された詳細情報。"""
+
+    file: str | None = None
+    line: int | None = None
+    message: str
+    suggestion: str | None = None
+
+
 class TerraformResult(BaseModel):
     """Terraform実行結果。"""
 
@@ -17,6 +26,7 @@ class TerraformResult(BaseModel):
     stderr: str
     exit_code: int
     plan_summary: str | None = None
+    errors: list[TerraformErrorDetail] | None = None
 
 
 class CLIResult(BaseModel):
@@ -26,6 +36,7 @@ class CLIResult(BaseModel):
     stdout: str
     stderr: str
     exit_code: int
+    setup_hint: str | None = None
 
 
 RMJobStatus = Literal["ACCEPTED", "IN_PROGRESS", "SUCCEEDED", "FAILED", "CANCELING", "CANCELED"]

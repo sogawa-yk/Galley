@@ -354,7 +354,8 @@ class TestExportIac:
         )
         result = await design_service.export_iac(session_id)
         variables_tf = result["terraform_files"]["variables.tf"]
-        assert 'variable "image_id"' in variables_tf
+        # image_idはdata sourceで自動取得されるため変数として生成されない
+        assert 'variable "image_id"' not in variables_tf
         assert 'variable "subnet_id"' in variables_tf
 
     async def test_export_iac_compute_adds_data_source(
@@ -369,6 +370,7 @@ class TestExportIac:
         result = await design_service.export_iac(session_id)
         main_tf = result["terraform_files"]["main.tf"]
         assert "oci_identity_availability_domains" in main_tf
+        assert "oci_core_images" in main_tf
 
     async def test_export_iac_deduplicates_variables(
         self, hearing_service: HearingService, design_service: DesignService
@@ -415,6 +417,459 @@ class TestExportIac:
         result = await design_service.export_iac(session_id)
         variables_tf = result["terraform_files"]["variables.tf"]
         assert 'variable "object_storage_namespace"' in variables_tf
+
+    async def test_export_iac_subnet_generates_real_resource(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R2: subnet テンプレートが実リソース定義を生成する。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "subnet", "display_name": "Public Subnet", "config": {"cidr_block": "10.0.1.0/24"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_core_subnet" in components_tf
+        assert "10.0.1.0/24" in components_tf
+
+    async def test_export_iac_internet_gateway_generates_resource(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R2: internet_gateway テンプレートが実リソース定義を生成する。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "internet_gateway", "display_name": "IGW"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_core_internet_gateway" in components_tf
+
+    async def test_export_iac_security_list_generates_resource(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R2: security_list テンプレートが実リソース定義を生成する。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "security_list", "display_name": "SL", "config": {"ingress_port": "443"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_core_security_list" in components_tf
+        assert "443" in components_tf
+
+    async def test_export_iac_generates_tfvars_example(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R3: terraform.tfvars.example が生成される。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "compute", "display_name": "Server"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        assert "terraform.tfvars.example" in result["terraform_files"]
+        tfvars = result["terraform_files"]["terraform.tfvars.example"]
+        assert "region" in tfvars
+        assert "compartment_ocid" in tfvars
+        # image_idはdata sourceで自動取得されるためtfvarsには含まれない
+        assert "image_id" not in tfvars
+
+    async def test_export_iac_local_subnet_skips_subnet_id_variable(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R4: アーキテクチャにsubnetが含まれる場合、subnet_id変数は生成されない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "subnet", "display_name": "My Subnet"},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "subnet_id"' not in variables_tf
+
+    async def test_export_iac_local_subnet_replaces_var_reference(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R4: subnet が存在する場合、var.subnet_id がローカル参照に置換される。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "subnet", "display_name": "My Subnet"},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "var.subnet_id" not in components_tf
+        assert "oci_core_subnet.my_subnet.id" in components_tf
+
+    async def test_export_iac_local_vcn_replaces_var_reference(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """R4: VCN が存在する場合、var.vcn_id がローカル参照に置換される。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "Main VCN"},
+                {"service_type": "subnet", "display_name": "Public Subnet"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "var.vcn_id" not in components_tf
+        assert "oci_core_vcn.main_vcn.id" in components_tf
+
+    async def test_export_iac_bool_config_renders_lowercase(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """bool値がHCL形式（true/false）で出力されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "loadbalancer", "display_name": "LB", "config": {"is_private": True}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "is_private     = true" in components_tf
+        assert "True" not in components_tf
+
+    async def test_export_iac_oke_default_version_is_supported(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKEのデフォルトK8sバージョンがv1.31以上であることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "v1.28" not in components_tf
+        assert "v1.31.1" in components_tf
+
+    async def test_export_iac_adb_includes_admin_password_variable(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """ADBテンプレートにadmin_password変数参照が含まれることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "adb", "display_name": "ADB"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert "var.adb_admin_password" in components_tf
+        assert 'variable "adb_admin_password"' in variables_tf
+        assert "sensitive   = true" in variables_tf
+
+    async def test_export_iac_adb_workload_type_mapped_to_oltp(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """ADBのworkload_type 'ATP'がOCI API値'OLTP'に変換されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "adb", "display_name": "ADB", "config": {"workload_type": "ATP"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert '"OLTP"' in components_tf
+        assert '"ATP"' not in components_tf
+
+    async def test_export_iac_adb_workload_type_adw_mapped_to_dw(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """ADBのworkload_type 'ADW'がOCI API値'DW'に変換されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "adb", "display_name": "ADB", "config": {"workload_type": "ADW"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert '"DW"' in components_tf
+
+    async def test_export_iac_loadbalancer_includes_shape_details(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """LBテンプレートにshape_detailsブロックが含まれることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "loadbalancer", "display_name": "LB"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "shape_details" in components_tf
+        assert "minimum_bandwidth_in_mbps" in components_tf
+        assert "maximum_bandwidth_in_mbps" in components_tf
+
+
+class TestExportIacRmCompatibility:
+    async def test_export_iac_no_auth_in_provider(
+        self,
+        hearing_service: HearingService,
+        design_service: DesignService,
+    ) -> None:
+        """RM互換: providerブロックにauthパラメータが含まれないこと。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "vcn", "display_name": "VCN"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        main_tf = result["terraform_files"]["main.tf"]
+        assert "auth" not in main_tf
+        assert "ResourcePrincipal" not in main_tf
+
+    async def test_export_iac_uses_compartment_ocid_variable(
+        self,
+        hearing_service: HearingService,
+        design_service: DesignService,
+    ) -> None:
+        """RM互換: compartment_ocid変数が使用されていること。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "vcn", "display_name": "VCN"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        components_tf = result["terraform_files"]["components.tf"]
+        assert 'variable "compartment_ocid"' in variables_tf
+        assert 'variable "compartment_id"' not in variables_tf
+        assert "var.compartment_ocid" in components_tf
+
+    async def test_export_iac_includes_tenancy_ocid_variable(
+        self,
+        hearing_service: HearingService,
+        design_service: DesignService,
+    ) -> None:
+        """RM互換: tenancy_ocid変数が宣言されていること。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "vcn", "display_name": "VCN"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "tenancy_ocid"' in variables_tf
+
+
+class TestSanitizeResourceName:
+    def test_parentheses_removed(self, design_service: DesignService) -> None:
+        assert design_service._sanitize_resource_name("autonomous_db_(atp)") == "autonomous_db_atp"
+
+    def test_special_characters_removed(self, design_service: DesignService) -> None:
+        assert design_service._sanitize_resource_name("my@server#1") == "myserver1"
+
+    def test_leading_digit_prefixed(self, design_service: DesignService) -> None:
+        assert design_service._sanitize_resource_name("123server") == "_123server"
+
+    def test_spaces_and_hyphens_replaced(self, design_service: DesignService) -> None:
+        assert design_service._sanitize_resource_name("My Web-Server") == "my_web_server"
+
+    def test_normal_name_unchanged(self, design_service: DesignService) -> None:
+        assert design_service._sanitize_resource_name("web_server") == "web_server"
+
+
+class TestExpandVcnNetwork:
+    async def test_vcn_with_compute_generates_network_resources(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCN+Compute構成でsubnet/IGW/route_table/security_listが自動生成される。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "Main VCN"},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_core_subnet" in components_tf
+        assert "oci_core_internet_gateway" in components_tf
+        assert "oci_core_route_table" in components_tf
+        assert "oci_core_security_list" in components_tf
+        # var.subnet_id, var.vcn_id等がローカル参照に置換される
+        assert "var.subnet_id" not in components_tf
+        assert "var.vcn_id" not in components_tf
+        assert "var.gateway_id" not in components_tf
+
+    async def test_vcn_with_existing_subnet_skips_subnet_generation(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """ユーザーが明示的にsubnetを定義済みの場合はsubnetが自動生成されない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN"},
+                {"service_type": "subnet", "display_name": "Custom Subnet", "config": {"cidr_block": "10.0.2.0/24"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # ユーザー定義のサブネットが存在
+        assert "Custom Subnet" in components_tf
+        # 自動生成のサブネットは含まれない
+        assert "VCN Public Subnet" not in components_tf
+
+    async def test_no_vcn_no_expansion(self, hearing_service: HearingService, design_service: DesignService) -> None:
+        """VCNなしの構成で自動展開が行われない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "adb", "display_name": "ADB"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_core_subnet" not in components_tf
+        assert "oci_core_internet_gateway" not in components_tf
+
+
+class TestExportIacAdbFreeTier:
+    async def test_adb_free_tier_true_from_config(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """config is_free_tier: True → Terraformコード上で is_free_tier = true。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "adb", "display_name": "ADB", "config": {"is_free_tier": True}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "is_free_tier             = true" in components_tf
+
+    async def test_adb_free_tier_default_false(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """config未設定 → デフォルト is_free_tier = false。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "adb", "display_name": "ADB"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "is_free_tier             = false" in components_tf
+
+
+class TestExportIacComputeImageDataSource:
+    async def test_compute_image_data_source_in_main_tf(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "compute", "display_name": "Server"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        main_tf = result["terraform_files"]["main.tf"]
+        assert 'data "oci_core_images" "latest"' in main_tf
+        assert "Oracle Linux" in main_tf
+
+    async def test_compute_no_image_id_variable(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "compute", "display_name": "Server"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "image_id"' not in variables_tf
+
+    async def test_compute_uses_data_source_reference(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "compute", "display_name": "Server"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "data.oci_core_images.latest.images[0].id" in components_tf
+        assert "var.image_id" not in components_tf
+
+
+class TestExportMermaidDisplayName:
+    async def test_mermaid_uses_display_name_ids(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"id": "comp-1", "service_type": "oke", "display_name": "My OKE"},
+                {"id": "comp-2", "service_type": "adb", "display_name": "My ADB"},
+            ],
+            connections=[
+                {
+                    "source_id": "comp-1",
+                    "target_id": "comp-2",
+                    "connection_type": "private_endpoint",
+                    "description": "OKE to ADB",
+                }
+            ],
+        )
+        mermaid = await design_service.export_mermaid(session_id)
+        # display_nameベースのIDが使用される
+        assert "my_oke" in mermaid
+        assert "my_adb" in mermaid
+        # UUIDが含まれない（UUID形式のパターンチェック）
+        import re
+
+        uuid_pattern = re.compile(r"[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}")
+        assert not uuid_pattern.search(mermaid)
 
 
 class TestExportAll:
