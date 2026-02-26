@@ -122,7 +122,91 @@ Claude Desktop等で実際に操作した結果の問題点・改善要望が記
   ```
 2. いずれかのコマンドでエラーが発生した場合は、問題を分析し、修正コードを生成・適用してから、再度このステップを実行する。
 
-**このステップが正常に完了したら、決して停止せず、ただちにステップ9に進むこと。**
+**このステップが正常に完了したら、決して停止せず、ただちにステップ8.5に進むこと。**
+
+## ステップ8.5: E2Eスモークテスト (mcp-gauge)
+
+**前提条件チェック:** このステップは、ステップ6の実装で以下のいずれかのファイルを変更した場合のみ実行する。いずれも変更していない場合は「スキップ（IaC非関連の修正）」としてステップ9へ進む。
+
+対象ファイルパターン:
+- `src/galley/services/design.py`
+- `src/galley/services/infra.py`
+- `src/galley/validators/architecture.py`
+- `config/oci-services.yaml`
+- `src/galley/tools/design.py`, `src/galley/tools/infra.py`, `src/galley/tools/export.py`
+- `src/galley/prompts/design.py`, `src/galley/prompts/infra.py`
+
+**環境情報:** `docs/environment.md` からコンパートメントOCID・リージョンを取得する。取得できない場合はデフォルト値を使用する（`tests/e2e/conftest.py` 参照: compartment=`ocid1.compartment.oc1..aaaaaaaanxm4oucgt5pkgd7sw2vouvckvvxan7ca2lirowaao7krnzlkdkhq`, region=`ap-osaka-1`）。
+
+**テストフロー:**
+
+1. Galleyサーバーを起動する:
+   ```bash
+   GALLEY_WORK_COMPARTMENT_ID=[コンパートメントOCID] GALLEY_REGION=[リージョン] uv run galley --port 19876 &
+   GALLEY_PID=$!
+   sleep 3
+   ```
+
+2. mcp-gaugeで接続する:
+   - `gauge_connect(server_url="http://localhost:19876/mcp")`
+
+3. VCNスモークテストを順次実行する（`tests/e2e/test_terraform_plan.py` のパターンを参照）:
+   - `gauge_proxy_call`: `create_session` → `galley_session_id` を取得
+   - `gauge_proxy_call`: `save_answers_batch` で最小限の回答を送信（purpose: "E2Eスモークテスト", scale: "small", availability: "standard", budget: "minimal"）
+   - `gauge_proxy_call`: `complete_hearing`
+   - `gauge_proxy_call`: `save_architecture` でVCN 1個の最小構成を保存（components: `[{"service_type": "vcn", "display_name": "Smoke Test VCN", "config": {"cidr_block": "10.254.0.0/16"}}]`, connections: `[]`）
+   - `gauge_proxy_call`: `validate_architecture`
+   - `gauge_proxy_call`: `export_iac` → `terraform_dir` を取得
+   - `gauge_proxy_call`: `run_terraform_plan` で plan-only 実行（variables: `{"compartment_id": "[コンパートメントOCID]", "region": "[リージョン]"}`）
+
+4. mcp-gaugeの後処理:
+   - `gauge_disconnect`
+   - `gauge_evaluate`
+
+5. サーバーを停止する:
+   ```bash
+   kill $GALLEY_PID
+   ```
+
+**結果判定:**
+- **全成功（PASSEDと判定）**: Terraform planが成功し、"to add"を含むplan summaryが得られた → ステップ9へ進む
+- **IaCバグによる失敗（FAILEDと判定）**: Terraform planがエラー（構文エラー、参照エラー、無効なパラメータ等）→ ステップ8.6へ進む
+- **環境依存エラー（スキップと判定）**: サーバー起動失敗、mcp-gauge接続タイムアウト、OCI認証エラー、クォータ超過等 → 「スキップ（環境依存エラー: [エラー内容]）」としてステップ9へ進む
+
+## ステップ8.6: E2Eテスト失敗時のフィードバック生成
+
+**このステップはステップ8.5でFAILEDと判定された場合のみ実行する。**
+
+1. `docs/feedbacks/[日付]-e2e-regression.md` を作成する。フォーマット:
+   ```markdown
+   # E2Eリグレッション検出レポート
+
+   **検出日**: [日付]
+   **元フィードバック**: `docs/feedbacks/[元のフィードバックファイル名]`
+   **テストツール**: mcp-gauge (VCN plan-onlyスモークテスト)
+
+   ---
+
+   ## 問題詳細
+
+   ### [エラーの簡潔な説明]
+
+   **症状**: [Terraform planのエラーメッセージ]
+
+   **原因分析**: [根本原因の推定]
+
+   **gaugeトレース**: [gauge_evaluateの結果から関連部分を抜粋]
+
+   ---
+
+   ## 改善提案
+
+   1. [具体的な修正案]
+   ```
+
+2. ユーザーに通知する: 「E2Eスモークテストで新規バグを検出しました。`docs/feedbacks/[日付]-e2e-regression.md` を作成しました。次回の `/fix-feedback` で対応可能です。」
+
+3. **ブロッカーにせず、ステップ9へ進む。**
 
 ## ステップ9: 振り返りとドキュメント更新
 
@@ -143,6 +227,7 @@ Claude Desktop等で実際に操作した結果の問題点・改善要望が記
   - **対応日**: [日付]
   - **ステアリング**: `.steering/[ステアリングディレクトリ名]/`
   - **対応内容の要約**: [修正内容の簡潔な要約]
+  - **E2Eスモークテスト**: [PASSED / FAILED（新規フィードバック作成済み） / スキップ（理由）]
   ```
 
 ## 完了条件
@@ -151,6 +236,8 @@ Claude Desktop等で実際に操作した結果の問題点・改善要望が記
 - ステップ6: `tasklist.md`の全てのタスクが完了状態（`[x]`または正当な理由でスキップ）になっている。
 - ステップ7: `implementation-validator`サブエージェントの検証をパスする。
 - ステップ8: `pytest`, `ruff check`, `ruff format`, `mypy`の全てのコマンドがエラーなく成功する。
+- ステップ8.5: PASSEDまたはスキップ（正当な理由あり）。
+- ステップ8.6:（失敗時のみ）新規フィードバックファイル `docs/feedbacks/[日付]-e2e-regression.md` が作成されている。
 - ステップ9: `tasklist.md`に申し送り事項が記載されている。フィードバックファイルに対応結果が追記されている。
 
 この完了条件を満たすまで、自律的に思考し、問題解決を行い、作業を継続すること。

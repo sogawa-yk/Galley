@@ -167,6 +167,25 @@ class InfraService:
                 result["tenancy_ocid"] = ""
         return result
 
+    @staticmethod
+    def _build_stack_display_name(session_id: str, purpose: str | None) -> str:
+        """RMスタックのdisplay_nameを生成する。
+
+        命名パターン: ``galley-{purpose_slug}-{session_id_short}``
+        purposeが未設定の場合: ``galley-{session_id_short}``
+        """
+        session_id_short = session_id[:8]
+        if not purpose:
+            return f"galley-{session_id_short}"
+        # 非英数字をハイフンに変換し、連続ハイフン・先頭末尾ハイフンを除去
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", purpose).strip("-").lower()
+        if not slug:
+            return f"galley-{session_id_short}"
+        # スラッグを最大40文字に切り詰め（ハイフン途中で切れないよう調整）
+        if len(slug) > 40:
+            slug = slug[:40].rsplit("-", 1)[0] or slug[:40]
+        return f"galley-{slug}-{session_id_short}"
+
     async def _ensure_rm_stack(
         self,
         session_id: str,
@@ -185,10 +204,17 @@ class InfraService:
         if not compartment_id and variables:
             compartment_id = variables.get("compartment_ocid", "")
 
+        # purposeからスタック表示名を生成
+        purpose = None
+        if "purpose" in session.answers:
+            val = session.answers["purpose"].value
+            purpose = val if isinstance(val, str) else ", ".join(val)
+        stack_display_name = self._build_stack_display_name(session_id, purpose)
+
         if session.rm_stack_id:
             # スタック更新
             update_details = oci.resource_manager.models.UpdateStackDetails(
-                display_name=f"galley-{session_id}",
+                display_name=stack_display_name,
                 config_source=oci.resource_manager.models.UpdateZipUploadConfigSourceDetails(
                     zip_file_base64_encoded=zip_content,
                 ),
@@ -204,7 +230,7 @@ class InfraService:
             # スタック新規作成
             create_details = oci.resource_manager.models.CreateStackDetails(
                 compartment_id=compartment_id,
-                display_name=f"galley-{session_id}",
+                display_name=stack_display_name,
                 config_source=oci.resource_manager.models.CreateZipUploadConfigSourceDetails(
                     zip_file_base64_encoded=zip_content,
                 ),

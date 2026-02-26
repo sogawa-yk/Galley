@@ -290,6 +290,53 @@ class TestGetRmClient:
             assert client1 is client2
 
 
+class TestBuildStackDisplayName:
+    def test_with_english_purpose(self) -> None:
+        """英語のpurposeからスラッグ付きの名前が生成される。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", "REST API")
+        assert name == "galley-rest-api-a1b2c3d4"
+
+    def test_with_japanese_purpose(self) -> None:
+        """日本語のpurposeは非ASCII文字が除去されsession_idのみになる。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", "REST API構築")
+        assert name == "galley-rest-api-a1b2c3d4"
+
+    def test_with_none_purpose(self) -> None:
+        """purposeがNoneの場合はsession_idのみ。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", None)
+        assert name == "galley-a1b2c3d4"
+
+    def test_with_empty_purpose(self) -> None:
+        """purposeが空文字の場合はsession_idのみ。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", "")
+        assert name == "galley-a1b2c3d4"
+
+    def test_with_only_japanese_purpose(self) -> None:
+        """全て日本語のpurposeはスラッグが空になりsession_idのみ。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", "日本語のみ")
+        assert name == "galley-a1b2c3d4"
+
+    def test_long_purpose_is_truncated(self) -> None:
+        """長いpurposeは40文字に切り詰められる。"""
+        long_purpose = "a-very-long-purpose-name-that-exceeds-the-maximum-allowed-slug-length-limit"
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", long_purpose)
+        # "galley-" + slug(<=40) + "-" + session_id_short(8)
+        slug_part = name.removeprefix("galley-").removesuffix("-a1b2c3d4")
+        assert len(slug_part) <= 40
+        assert name.startswith("galley-")
+        assert name.endswith("-a1b2c3d4")
+
+    def test_special_characters_sanitized(self) -> None:
+        """特殊文字がハイフンに変換される。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", "My App (v2.0) -- test!")
+        assert name == "galley-my-app-v2-0-test-a1b2c3d4"
+
+    def test_mixed_content(self) -> None:
+        """英数字と日本語の混在。"""
+        name = InfraService._build_stack_display_name("a1b2c3d4-e5f6-g7h8", "IoTリアルタイムデータ分析Platform")
+        assert name == "galley-iot-platform-a1b2c3d4"
+
+
 class TestEnsureRmStack:
     async def test_creates_new_stack(
         self, hearing_service: HearingService, infra_service: InfraService, tmp_path: Path
@@ -319,6 +366,9 @@ class TestEnsureRmStack:
         # config_sourceにzip_file_base64_encodedが設定されていること
         create_details = call_args.args[0]
         assert create_details.config_source.zip_file_base64_encoded is not None
+        # display_nameにpurpose由来のスラッグが含まれている（purpose="REST API構築"）
+        assert create_details.display_name.startswith("galley-rest-api-")
+        assert create_details.display_name.endswith(session_id[:8])
         # セッションにstack_idが保存されている
         session = await hearing_service._storage.load_session(session_id)
         assert session.rm_stack_id == "ocid1.stack.new"
@@ -353,6 +403,9 @@ class TestEnsureRmStack:
         # config_sourceにzip_file_base64_encodedが設定されていること
         update_details = call_args.args[1]
         assert update_details.config_source.zip_file_base64_encoded is not None
+        # display_nameにpurpose由来のスラッグが含まれている
+        assert update_details.display_name.startswith("galley-rest-api-")
+        assert update_details.display_name.endswith(session_id[:8])
 
 
 class TestRunRmJob:
