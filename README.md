@@ -42,6 +42,9 @@ docker push <region>.ocir.io/<namespace>/galley:latest
 | `galley_work_compartment_id` | No | `compartment_ocid` | Galleyの作業対象コンパートメント |
 | `image_tag` | No | `latest` | コンテナイメージタグ |
 | `galley_image_url` | No | 自動生成 | イメージフルURL (OCIR自動構成を上書き) |
+| `container_instance_shape` | No | `CI.Standard.E4.Flex` | Container Instanceシェイプ |
+| `container_instance_ocpus` | No | `1` | OCPU数 |
+| `container_instance_memory_in_gbs` | No | `2` | メモリ (GB) |
 
 ### デプロイ後の利用方法
 

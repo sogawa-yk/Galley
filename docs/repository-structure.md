@@ -52,8 +52,12 @@ galley/
 ├── .claude/                   # Claude Code設定
 │   ├── skills/                # スキル定義
 │   └── agents/                # サブエージェント定義
+├── .github/                   # GitHub設定
+│   └── workflows/
+│       └── package-deploy-stack.yml  # deploy/をzipパッケージしてRelease配布
 ├── pyproject.toml             # プロジェクト設定・依存関係
 ├── uv.lock                    # 依存関係ロックファイル
+├── README.md                  # プロジェクト概要・Deploy to Oracle Cloudボタン
 ├── CLAUDE.md                  # Claude Code設定ファイル
 ├── .gitignore
 └── .python-version            # Pythonバージョン指定
