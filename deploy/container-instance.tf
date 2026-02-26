@@ -20,7 +20,7 @@ resource "oci_container_instances_container_instance" "galley" {
   }
 
   vnics {
-    subnet_id              = var.private_subnet_id
+    subnet_id              = oci_core_subnet.private.id
     display_name           = "${local.name_prefix}-vnic"
     is_public_ip_assigned  = false
     nsg_ids                = [oci_core_network_security_group.private.id]

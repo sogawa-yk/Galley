@@ -1,11 +1,6 @@
 # ============================================================
-# NSG (Network Security Groups) - 既存dev VCN内のセキュリティ制御
+# NSG (Network Security Groups)
 # ============================================================
-
-# パブリックサブネットのCIDR取得（プライベートNSGのingress sourceに使用）
-data "oci_core_subnet" "public" {
-  subnet_id = var.public_subnet_id
-}
 
 # ------------------------------------------------------------
 # パブリックNSG - API Gateway用
@@ -13,7 +8,7 @@ data "oci_core_subnet" "public" {
 
 resource "oci_core_network_security_group" "public" {
   compartment_id = var.compartment_ocid
-  vcn_id         = var.vcn_id
+  vcn_id         = oci_core_vcn.galley.id
   display_name   = "${local.name_prefix}-public-nsg"
 }
 
@@ -50,7 +45,7 @@ resource "oci_core_network_security_group_security_rule" "public_egress_all" {
 
 resource "oci_core_network_security_group" "private" {
   compartment_id = var.compartment_ocid
-  vcn_id         = var.vcn_id
+  vcn_id         = oci_core_vcn.galley.id
   display_name   = "${local.name_prefix}-private-nsg"
 }
 
@@ -59,7 +54,7 @@ resource "oci_core_network_security_group_security_rule" "private_ingress_mcp" {
   network_security_group_id = oci_core_network_security_group.private.id
   direction                 = "INGRESS"
   protocol                  = "6" # TCP
-  source                    = data.oci_core_subnet.public.cidr_block
+  source                    = oci_core_subnet.public.cidr_block
   source_type               = "CIDR_BLOCK"
   stateless                 = false
 

@@ -1,3 +1,8 @@
+variable "tenancy_ocid" {
+  description = "テナンシーOCID（Resource Managerが自動注入）"
+  type        = string
+}
+
 variable "compartment_ocid" {
   description = "Galleyインフラを配置するコンパートメントOCID"
   type        = string
@@ -22,6 +27,12 @@ variable "galley_work_compartment_id" {
     condition     = var.galley_work_compartment_id == null || can(regex("^ocid1\\.(compartment|tenancy)\\.", var.galley_work_compartment_id))
     error_message = "galley_work_compartment_id はコンパートメントまたはテナンシーのOCIDである必要があります。"
   }
+}
+
+variable "vcn_cidr" {
+  description = "VCNのCIDRブロック"
+  type        = string
+  default     = "10.0.0.0/16"
 }
 
 variable "image_tag" {
@@ -52,19 +63,4 @@ variable "container_instance_memory_in_gbs" {
   description = "Container Instanceに割り当てるメモリ（GB）"
   type        = number
   default     = 2
-}
-
-variable "vcn_id" {
-  description = "既存VCNのOCID"
-  type        = string
-}
-
-variable "public_subnet_id" {
-  description = "既存パブリックサブネットのOCID（API Gateway配置先）"
-  type        = string
-}
-
-variable "private_subnet_id" {
-  description = "既存プライベートサブネットのOCID（Container Instance配置先）"
-  type        = string
 }

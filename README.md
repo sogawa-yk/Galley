@@ -4,7 +4,7 @@ AI駆動のOCIソリューション構築プラットフォーム。Claude等の
 
 ## Deploy to Oracle Cloud
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?region=home&zipUrl=https://orasejapan.objectstorage.ap-osaka-1.oci.customer-oci.com/p/uLzw0bvkEVm1YIRHPCPDj-MC4_fknfEK5qhyaH8gvIHMWc-HqMTj7TUtuHlIw4L1/n/orasejapan/b/tools/o/galley-stack.zip)
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?region=home&zipUrl=https://github.com/sogawa-yk/Galley/releases/latest/download/galley-stack.zip)
 
 > ボタンをクリックするとOCI Console の Resource Manager スタック作成画面が開きます。
 
@@ -14,8 +14,7 @@ AI駆動のOCIソリューション構築プラットフォーム。Claude等の
 
 1. **OCI テナンシー** — 有効なOCIアカウント
 2. **コンパートメント** — Galleyインフラを配置するコンパートメント
-3. **VCN + サブネット** — 既存のVCNにパブリックサブネット（API Gateway用）とプライベートサブネット（Container Instance用）が必要
-4. **コンテナイメージ** — GalleyイメージがOCIRにpush済みであること
+3. **コンテナイメージ** — GalleyイメージがOCIRにpush済みであること
 
 ### コンテナイメージの準備
 
@@ -36,10 +35,8 @@ docker push <region>.ocir.io/<namespace>/galley:latest
 |------|------|-----------|------|
 | `compartment_ocid` | Yes | - | インフラ配置コンパートメントOCID |
 | `region` | Yes | - | OCIリージョン (例: `ap-tokyo-1`) |
-| `vcn_id` | Yes | - | 既存VCNのOCID |
-| `public_subnet_id` | Yes | - | パブリックサブネットOCID (API Gateway配置先) |
-| `private_subnet_id` | Yes | - | プライベートサブネットOCID (Container Instance配置先) |
 | `galley_work_compartment_id` | No | `compartment_ocid` | Galleyの作業対象コンパートメント |
+| `vcn_cidr` | No | `10.0.0.0/16` | VCNのCIDRブロック |
 | `image_tag` | No | `latest` | コンテナイメージタグ |
 | `galley_image_url` | No | 自動生成 | イメージフルURL (OCIR自動構成を上書き) |
 | `container_instance_shape` | No | `CI.Standard.E4.Flex` | Container Instanceシェイプ |
