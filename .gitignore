@@ -57,3 +57,6 @@ htmlcov/
 
 # Ruff
 .ruff_cache/
+
+# MCP local config
+.mcp.json

@@ -57,6 +57,33 @@ _TF_RESOURCE_TEMPLATES: dict[str, str] = {
     is_public_ip_enabled = true
     subnet_id            = var.subnet_id
   }}
+}}
+
+resource "oci_containerengine_node_pool" "{name}_node_pool" {{
+  compartment_id     = var.compartment_ocid
+  cluster_id         = oci_containerengine_cluster.{name}.id
+  kubernetes_version = "{kubernetes_version}"
+  name               = "{display_name}-node-pool"
+
+  node_shape = "{node_shape}"
+  node_shape_config {{
+    ocpus         = {node_ocpus}
+    memory_in_gbs = {node_memory}
+  }}
+
+  node_config_details {{
+    size = {node_count}
+
+    placement_configs {{
+      availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+      subnet_id           = var.subnet_id
+    }}
+  }}
+
+  node_source_details {{
+    source_type = "IMAGE"
+    image_id    = data.oci_core_images.oke_node.images[0].id
+  }}
 }}""",
     "adb": """resource "oci_database_autonomous_database" "{name}" {{
   compartment_id           = var.compartment_ocid
@@ -67,7 +94,7 @@ _TF_RESOURCE_TEMPLATES: dict[str, str] = {
   db_workload              = "{workload_type}"
   is_free_tier             = {is_free_tier}
   admin_password           = var.adb_admin_password
-}}""",
+{adb_private_endpoint_block}}}""",
     "apigateway": """resource "oci_apigateway_gateway" "{name}" {{
   compartment_id = var.compartment_ocid
   endpoint_type  = "{endpoint_type}"
@@ -89,7 +116,7 @@ resource "oci_functions_function" "{name}" {{
     "objectstorage": """resource "oci_objectstorage_bucket" "{name}" {{
   compartment_id = var.compartment_ocid
   namespace      = var.object_storage_namespace
-  name           = "{display_name}"
+  name           = "{safe_name}"
   storage_tier   = "{storage_tier}"
   versioning     = "{versioning}"
 }}""",
@@ -107,14 +134,14 @@ resource "oci_functions_function" "{name}" {{
 }}""",
     "streaming": """resource "oci_streaming_stream" "{name}" {{
   compartment_id     = var.compartment_ocid
-  name               = "{display_name}"
+  name               = "{safe_name}"
   partitions         = {partitions}
   retention_in_hours = {retention_in_hours}
 }}""",
     "nosql": """resource "oci_nosql_table" "{name}" {{
   compartment_id = var.compartment_ocid
-  name           = "{display_name}"
-  ddl_statement  = "CREATE TABLE {display_name} (id STRING, data JSON, PRIMARY KEY(id))"
+  name           = "{safe_name}"
+  ddl_statement  = "CREATE TABLE {safe_name} (id STRING, data JSON, PRIMARY KEY(id))"
 
   table_limits {{
     max_read_units     = 50
@@ -195,6 +222,7 @@ _TF_REQUIRED_VARS: dict[str, list[dict[str, str]]] = {
     ],
     "adb": [
         {"name": "adb_admin_password", "description": "ADB admin password", "type": "string", "sensitive": "true"},
+        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
     ],
     "apigateway": [
         {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
@@ -246,6 +274,19 @@ _TF_REQUIRED_DATA_SOURCES: dict[str, list[str]] = {
             "}"
         ),
     ],
+    "oke": [
+        'data "oci_identity_availability_domains" "ads" {\n  compartment_id = var.compartment_ocid\n}',
+        (
+            'data "oci_core_images" "oke_node" {\n'
+            "  compartment_id           = var.compartment_ocid\n"
+            '  operating_system         = "Oracle Linux"\n'
+            '  operating_system_version = "8"\n'
+            '  shape                    = "VM.Standard.E4.Flex"\n'
+            '  sort_by                  = "TIMECREATED"\n'
+            '  sort_order               = "DESC"\n'
+            "}"
+        ),
+    ],
     "service_gateway": [
         'data "oci_core_services" "all_services" {\n}',
     ],
@@ -261,7 +302,13 @@ _ADB_WORKLOAD_MAP: dict[str, str] = {
 _TF_DEFAULTS: dict[str, dict[str, str]] = {
     "vcn": {"cidr_block": "10.0.0.0/16"},
     "compute": {"shape": "VM.Standard.E4.Flex", "ocpus": "1", "memory_in_gbs": "16"},
-    "oke": {"kubernetes_version": "v1.31.1"},
+    "oke": {
+        "kubernetes_version": "v1.31.1",
+        "node_shape": "VM.Standard.E4.Flex",
+        "node_ocpus": "1",
+        "node_memory": "16",
+        "node_count": "3",
+    },
     "adb": {
         "db_name": "galleydb",
         "cpu_core_count": "1",
@@ -642,22 +689,141 @@ class DesignService:
 
         アーキテクチャにsubnetやvcnが含まれる場合、var.subnet_id/var.vcn_id を
         ローカルリソースへの参照に置換するためのマッピングを返す。
+
+        Returns:
+            "var." プレフィックスのキーはテンプレート変数に対応するデフォルト参照。
+            "_" プレフィックスのキーはpublic/private解決用のコンテキスト情報。
         """
-        # サービスタイプ → (Terraform参照パターン, リソースタイプ) のマッピング
-        _REFERENCE_MAP: dict[str, tuple[str, str]] = {
-            "subnet": ("var.subnet_id", "oci_core_subnet"),
-            "vcn": ("var.vcn_id", "oci_core_vcn"),
-            "internet_gateway": ("var.gateway_id", "oci_core_internet_gateway"),
-            "route_table": ("var.route_table_id", "oci_core_route_table"),
-            "security_list": ("var.security_list_id", "oci_core_security_list"),
-        }
         refs: dict[str, str] = {}
+        _safe = DesignService._sanitize_resource_name
+
+        # VCN
         for comp in components:
-            mapping = _REFERENCE_MAP.get(comp.service_type)
-            if mapping is not None:
-                var_ref, resource_type = mapping
-                safe_name = DesignService._sanitize_resource_name(comp.display_name)
-                refs[var_ref] = f"{resource_type}.{safe_name}.id"
+            if comp.service_type == "vcn":
+                refs["var.vcn_id"] = f"oci_core_vcn.{_safe(comp.display_name)}.id"
+                break
+
+        # Subnets: public/private分類
+        public_subnet_ref: str | None = None
+        private_subnet_ref: str | None = None
+        for comp in components:
+            if comp.service_type == "subnet":
+                ref = f"oci_core_subnet.{_safe(comp.display_name)}.id"
+                prohibit = str(comp.config.get("prohibit_public_ip", "false")).lower()
+                if prohibit == "true":
+                    if private_subnet_ref is None:
+                        private_subnet_ref = ref
+                else:
+                    if public_subnet_ref is None:
+                        public_subnet_ref = ref
+
+        default_subnet = public_subnet_ref or private_subnet_ref
+        if default_subnet:
+            refs["var.subnet_id"] = default_subnet
+        if private_subnet_ref:
+            refs["_private_subnet_ref"] = private_subnet_ref
+
+        # Internet Gateway / NAT Gateway
+        for comp in components:
+            if comp.service_type == "internet_gateway":
+                refs["_igw_ref"] = f"oci_core_internet_gateway.{_safe(comp.display_name)}.id"
+            elif comp.service_type == "nat_gateway":
+                refs["_nat_gw_ref"] = f"oci_core_nat_gateway.{_safe(comp.display_name)}.id"
+
+        # デフォルトgateway: IGW（後方互換）
+        if "_igw_ref" in refs:
+            refs["var.gateway_id"] = refs["_igw_ref"]
+
+        # Route Tables: public/private分類（名前ベース）
+        public_rt_ref: str | None = None
+        private_rt_ref: str | None = None
+        for comp in components:
+            if comp.service_type == "route_table":
+                ref = f"oci_core_route_table.{_safe(comp.display_name)}.id"
+                if "private" in comp.display_name.lower():
+                    if private_rt_ref is None:
+                        private_rt_ref = ref
+                else:
+                    if public_rt_ref is None:
+                        public_rt_ref = ref
+
+        default_rt = public_rt_ref or private_rt_ref
+        if default_rt:
+            refs["var.route_table_id"] = default_rt
+        if private_rt_ref:
+            refs["_private_route_table_ref"] = private_rt_ref
+
+        # Security Lists: public/private分類（名前ベース）
+        public_sl_ref: str | None = None
+        private_sl_ref: str | None = None
+        for comp in components:
+            if comp.service_type == "security_list":
+                ref = f"oci_core_security_list.{_safe(comp.display_name)}.id"
+                if "private" in comp.display_name.lower():
+                    if private_sl_ref is None:
+                        private_sl_ref = ref
+                else:
+                    if public_sl_ref is None:
+                        public_sl_ref = ref
+
+        default_sl = public_sl_ref or private_sl_ref
+        if default_sl:
+            refs["var.security_list_id"] = default_sl
+        if private_sl_ref:
+            refs["_private_security_list_ref"] = private_sl_ref
+
+        return refs
+
+    @staticmethod
+    def _get_component_refs(comp: Component, local_refs: dict[str, str]) -> dict[str, str]:
+        """コンポーネント特性に基づいてローカル参照を選択的に解決する。
+
+        テンプレート変数（var.*）のみを返し、コンポーネントのサービスタイプや
+        設定に応じてpublic/privateリソースを適切に割り当てる。
+        """
+        # var.* キーのみ抽出（テンプレート変数に対応するもの）
+        refs = {k: v for k, v in local_refs.items() if k.startswith("var.")}
+
+        if comp.service_type == "subnet":
+            # Private subnetにはprivate route table/security listを割り当て
+            is_private = str(comp.config.get("prohibit_public_ip", "false")).lower() == "true"
+            if is_private:
+                if "_private_route_table_ref" in local_refs:
+                    refs["var.route_table_id"] = local_refs["_private_route_table_ref"]
+                if "_private_security_list_ref" in local_refs:
+                    refs["var.security_list_id"] = local_refs["_private_security_list_ref"]
+
+        elif comp.service_type == "route_table":
+            # Private route tableにはNAT GW、public route tableにはIGWを割り当て
+            is_private = "private" in comp.display_name.lower()
+            if is_private and "_nat_gw_ref" in local_refs:
+                refs["var.gateway_id"] = local_refs["_nat_gw_ref"]
+            elif not is_private and "_igw_ref" in local_refs:
+                refs["var.gateway_id"] = local_refs["_igw_ref"]
+
+        elif comp.service_type in ("loadbalancer", "apigateway", "oke"):
+            # Public/Private判定に基づくサブネット選択
+            is_private_resource = False
+            if comp.service_type == "loadbalancer":
+                is_private_resource = str(comp.config.get("is_private", "false")).lower() == "true"
+            elif comp.service_type == "apigateway":
+                is_private_resource = comp.config.get("endpoint_type", "PUBLIC").upper() == "PRIVATE"
+            # OKEはデフォルトでpublic endpoint
+
+            if is_private_resource and "_private_subnet_ref" in local_refs:
+                refs["var.subnet_id"] = local_refs["_private_subnet_ref"]
+
+        elif comp.service_type == "functions":
+            # Functionsは通常private subnetに配置
+            if "_private_subnet_ref" in local_refs:
+                refs["var.subnet_id"] = local_refs["_private_subnet_ref"]
+
+        elif comp.service_type == "adb":
+            # ADB private endpointの場合はprivate subnetを使用
+            endpoint = comp.config.get("endpoint_type", "public")
+            if str(endpoint).lower() == "private" and "_private_subnet_ref" in local_refs:
+                refs["var.subnet_id"] = local_refs["_private_subnet_ref"]
+
         return refs
 
     @staticmethod
@@ -680,6 +846,16 @@ class DesignService:
                     id=str(uuid.uuid4()),
                     service_type="internet_gateway",
                     display_name=f"{vcn_name} IGW",
+                    config={},
+                )
+            )
+
+        if "nat_gateway" not in service_types:
+            expanded.append(
+                Component(
+                    id=str(uuid.uuid4()),
+                    service_type="nat_gateway",
+                    display_name=f"{vcn_name} NAT GW",
                     config={},
                 )
             )
@@ -738,6 +914,7 @@ class DesignService:
         defaults = dict(_TF_DEFAULTS.get(service_type, {}))
         params: dict[str, str] = {
             "name": safe_name,
+            "safe_name": safe_name,
             "display_name": comp.display_name,
         }
         params.update(defaults)
@@ -748,9 +925,23 @@ class DesignService:
             else:
                 params[k] = str(v)
 
+        # API Gateway: endpoint_type を大文字に変換（OCI APIが要求）
+        if service_type == "apigateway" and "endpoint_type" in params:
+            params["endpoint_type"] = params["endpoint_type"].upper()
+
         # ADB: ユーザー入力の workload_type を OCI API値に変換
         if service_type == "adb" and "workload_type" in params:
             params["workload_type"] = _ADB_WORKLOAD_MAP.get(params["workload_type"], params["workload_type"])
+
+        # ADB: プライベートエンドポイント設定
+        if service_type == "adb":
+            endpoint = params.get("endpoint_type", "public").lower()
+            if endpoint == "private":
+                params["adb_private_endpoint_block"] = (
+                    "  subnet_id              = var.subnet_id\n  nsg_ids               = []\n"
+                )
+            else:
+                params["adb_private_endpoint_block"] = ""
 
         return template.format(**params)
 
@@ -814,11 +1005,12 @@ class DesignService:
 
         # R4: ローカル参照マップ — 展開後のコンポーネントが提供する変数を特定
         local_refs = self._build_local_references(expanded_components)
-        # ローカルで解決される変数名を収集（例: "subnet_id", "vcn_id"）
+        # ローカルで解決される変数名を収集（"var." プレフィックスのみ対象）
         locally_provided_vars: set[str] = set()
         for var_ref in local_refs:
-            # "var.subnet_id" → "subnet_id"
-            locally_provided_vars.add(var_ref.split(".")[-1])
+            if var_ref.startswith("var."):
+                # "var.subnet_id" → "subnet_id"
+                locally_provided_vars.add(var_ref.split(".")[-1])
 
         # コンポーネントに応じた追加変数を収集（重複排除 + ローカル提供分を除外）
         seen_vars: set[str] = set()
@@ -859,8 +1051,9 @@ class DesignService:
         comp_lines.append("")
         for comp in expanded_components:
             rendered = self._render_component_tf(comp)
-            # R4: ローカル参照置換（var.subnet_id → oci_core_subnet.xxx.id 等）
-            for old_ref, new_ref in local_refs.items():
+            # R4: ローカル参照置換（コンポーネント特性に基づくpublic/private振り分け）
+            comp_refs = self._get_component_refs(comp, local_refs)
+            for old_ref, new_ref in comp_refs.items():
                 rendered = rendered.replace(old_ref, new_ref)
             comp_lines.append(rendered)
             comp_lines.append("")

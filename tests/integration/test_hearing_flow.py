@@ -107,12 +107,12 @@ class TestHearingFlowViaMCP:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             prompts = await client.list_prompts()
             prompt_names = {p.name for p in prompts}
-            assert "start_hearing" in prompt_names
-            assert "resume_hearing" in prompt_names
+            assert "build_infrastructure" in prompt_names
+            assert "build_full_stack" in prompt_names
 
-    async def test_start_hearing_prompt_contains_session_id_instruction(self, mcp_server: object) -> None:
+    async def test_build_infrastructure_prompt_contains_hearing_instructions(self, mcp_server: object) -> None:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.get_prompt("start_hearing", {})
+            result = await client.get_prompt("build_infrastructure", {})
             text = result.messages[0].content.text  # type: ignore[union-attr]
             assert "session_id" in text
             assert "利用者に必ず提示" in text
