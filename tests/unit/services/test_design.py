@@ -887,3 +887,380 @@ class TestExportAll:
         assert "mermaid" in result
         assert "terraform_files" in result
         assert "terraform_dir" in result
+
+
+class TestResourceNameSanitization:
+    """C-2: OCI APIリソース名のサニタイズテスト。"""
+
+    async def test_nosql_name_sanitized(self, hearing_service: HearingService, design_service: DesignService) -> None:
+        """NoSQLテーブル名にスペースが含まれず、safe_nameが使用されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "nosql", "display_name": "IoT Session Store"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # name フィールドはサニタイズ済み
+        assert 'name           = "iot_session_store"' in components_tf
+        # DDL文もサニタイズ済み
+        assert "CREATE TABLE iot_session_store" in components_tf
+        # display_nameのスペース付きはnameフィールドに現れない
+        assert 'name           = "IoT Session Store"' not in components_tf
+
+    async def test_objectstorage_name_sanitized(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Object Storageバケット名にスペースが含まれないことを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "objectstorage", "display_name": "Data Lake"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert 'name           = "data_lake"' in components_tf
+        assert 'name           = "Data Lake"' not in components_tf
+
+    async def test_streaming_name_sanitized(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Streaming名にスペースが含まれないことを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "streaming", "display_name": "IoT Event Stream"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert 'name               = "iot_event_stream"' in components_tf
+        assert 'name               = "IoT Event Stream"' not in components_tf
+
+
+class TestApiGatewayEndpointTypeCase:
+    """C-5: API Gateway endpoint_type大文字化テスト。"""
+
+    async def test_endpoint_type_uppercase_from_lowercase(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """endpoint_type 'public' が 'PUBLIC' に変換されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "apigateway", "display_name": "API GW", "config": {"endpoint_type": "public"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert 'endpoint_type  = "PUBLIC"' in components_tf
+        assert 'endpoint_type  = "public"' not in components_tf
+
+    async def test_endpoint_type_private_uppercase(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """endpoint_type 'private' が 'PRIVATE' に変換されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "apigateway", "display_name": "API GW", "config": {"endpoint_type": "private"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert 'endpoint_type  = "PRIVATE"' in components_tf
+
+
+class TestMultiSubnetReferences:
+    """C-1, C-3, C-4: 複数サブネット構成のローカル参照テスト。"""
+
+    async def test_public_lb_uses_public_subnet(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Public LBがpublic subnetを参照することを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {
+                    "service_type": "subnet",
+                    "display_name": "Public Subnet",
+                    "config": {"cidr_block": "10.0.0.0/24", "prohibit_public_ip": "false"},
+                },
+                {
+                    "service_type": "subnet",
+                    "display_name": "Private Subnet",
+                    "config": {"cidr_block": "10.0.1.0/24", "prohibit_public_ip": "true"},
+                },
+                {"service_type": "loadbalancer", "display_name": "LB", "config": {"is_private": False}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # LBリソースブロックを抽出して確認
+        blocks = components_tf.split("\nresource ")
+        lb_block = next(b for b in blocks if "oci_load_balancer_load_balancer" in b)
+        assert "oci_core_subnet.public_subnet.id" in lb_block
+
+    async def test_private_route_table_uses_nat_gw(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Private Route TableがNAT GWを参照することを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "internet_gateway", "display_name": "IGW"},
+                {"service_type": "nat_gateway", "display_name": "NAT GW"},
+                {
+                    "service_type": "route_table",
+                    "display_name": "Public Route Table",
+                    "config": {"destination": "0.0.0.0/0"},
+                },
+                {
+                    "service_type": "route_table",
+                    "display_name": "Private Route Table",
+                    "config": {"destination": "0.0.0.0/0"},
+                },
+                {
+                    "service_type": "subnet",
+                    "display_name": "Public Subnet",
+                    "config": {"cidr_block": "10.0.0.0/24", "prohibit_public_ip": "false"},
+                },
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # リソースブロックを "resource" で分割して各セクションを取得
+        blocks = components_tf.split("\nresource ")
+        private_rt_block = next(b for b in blocks if '"private_route_table"' in b)
+        public_rt_block = next(b for b in blocks if '"public_route_table"' in b)
+        # Private Route TableはNAT GWを参照
+        assert "oci_core_nat_gateway.nat_gw.id" in private_rt_block
+        # Public Route TableはIGWを参照
+        assert "oci_core_internet_gateway.igw.id" in public_rt_block
+
+    async def test_private_subnet_uses_private_route_table(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Private SubnetがPrivate Route Tableを参照することを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {
+                    "service_type": "route_table",
+                    "display_name": "Public Route Table",
+                    "config": {"destination": "0.0.0.0/0"},
+                },
+                {
+                    "service_type": "route_table",
+                    "display_name": "Private Route Table",
+                    "config": {"destination": "0.0.0.0/0"},
+                },
+                {
+                    "service_type": "security_list",
+                    "display_name": "Public Security List",
+                    "config": {"ingress_source": "0.0.0.0/0", "ingress_port": "443"},
+                },
+                {
+                    "service_type": "security_list",
+                    "display_name": "Private Security List",
+                    "config": {"ingress_source": "10.0.0.0/16", "ingress_port": "8080"},
+                },
+                {
+                    "service_type": "subnet",
+                    "display_name": "Public Subnet",
+                    "config": {"cidr_block": "10.0.0.0/24", "prohibit_public_ip": "false"},
+                },
+                {
+                    "service_type": "subnet",
+                    "display_name": "Private Subnet",
+                    "config": {"cidr_block": "10.0.1.0/24", "prohibit_public_ip": "true"},
+                },
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # リソースブロックを分割
+        blocks = components_tf.split("\nresource ")
+        priv_sub_block = next(b for b in blocks if '"private_subnet"' in b)
+        pub_sub_block = next(b for b in blocks if '"public_subnet"' in b)
+        # Private SubnetはPrivate Route Table/Security Listを参照
+        assert "oci_core_route_table.private_route_table.id" in priv_sub_block
+        assert "oci_core_security_list.private_security_list.id" in priv_sub_block
+        # Public SubnetはPublic Route Table/Security Listを参照
+        assert "oci_core_route_table.public_route_table.id" in pub_sub_block
+        assert "oci_core_security_list.public_security_list.id" in pub_sub_block
+
+
+class TestOkeNodePool:
+    """H-1: OKE Node Pool生成テスト。"""
+
+    async def test_oke_generates_node_pool(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKEクラスタにNode Poolリソースが生成されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "App Cluster"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_containerengine_cluster" in components_tf
+        assert "oci_containerengine_node_pool" in components_tf
+        assert "node_shape" in components_tf
+        assert "node_config_details" in components_tf
+
+    async def test_oke_image_data_source_has_shape_filter(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKEノードイメージデータソースにshapeフィルタが含まれることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "App Cluster"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        main_tf = result["terraform_files"]["main.tf"]
+        assert "shape" in main_tf
+        assert "VM.Standard.E4.Flex" in main_tf
+
+    async def test_oke_node_pool_references_cluster(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Node PoolがクラスタIDを参照することを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "My OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "oci_containerengine_cluster.my_oke.id" in components_tf
+
+
+class TestAdbPrivateEndpoint:
+    """H-2: ADBプライベートエンドポイントテスト。"""
+
+    async def test_adb_private_endpoint_includes_subnet(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """endpoint_type=privateでsubnet_idが設定されることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "adb", "display_name": "ADB", "config": {"endpoint_type": "private"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "subnet_id" in components_tf
+        assert "nsg_ids" in components_tf
+        assert "is_access_control_enabled" not in components_tf
+
+    async def test_adb_public_endpoint_no_subnet(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """endpoint_type=publicでsubnet_idが設定されないことを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "adb", "display_name": "ADB", "config": {"endpoint_type": "public"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # ADBリソースブロック内にsubnet_idがない（public endpoint）
+        blocks = components_tf.split("\nresource ")
+        adb_block = next(b for b in blocks if "oci_database_autonomous_database" in b)
+        assert "subnet_id" not in adb_block
+
+
+class TestValidationNaming:
+    """M-1: バリデーション命名規則テスト。"""
+
+    async def test_nosql_with_spaces_triggers_warning(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """スペースを含むNoSQL名で警告が出ることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "nosql", "display_name": "IoT Session Store"}],
+            connections=[],
+        )
+        results = await design_service.validate_architecture(session_id)
+        naming_results = [r for r in results if r.rule_id == "naming-convention"]
+        assert len(naming_results) > 0
+        assert "IoT Session Store" in naming_results[0].message
+
+    async def test_valid_name_no_warning(self, hearing_service: HearingService, design_service: DesignService) -> None:
+        """有効な名前で警告が出ないことを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "nosql", "display_name": "iot_session_store"}],
+            connections=[],
+        )
+        results = await design_service.validate_architecture(session_id)
+        naming_results = [r for r in results if r.rule_id == "naming-convention"]
+        assert len(naming_results) == 0
+
+
+class TestValidationSubnetPlacement:
+    """M-1: バリデーションサブネット配置テスト。"""
+
+    async def test_public_lb_in_private_subnet_triggers_error(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Public LBがprivate subnetに配置されるとエラーが出ることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {
+                    "id": "lb-1",
+                    "service_type": "loadbalancer",
+                    "display_name": "Public LB",
+                    "config": {"is_private": "false"},
+                },
+                {
+                    "id": "subnet-1",
+                    "service_type": "subnet",
+                    "display_name": "Private Subnet",
+                    "config": {"prohibit_public_ip": "true"},
+                },
+            ],
+            connections=[
+                {
+                    "source_id": "lb-1",
+                    "target_id": "subnet-1",
+                    "connection_type": "deployed_in",
+                    "description": "LB in private subnet",
+                }
+            ],
+        )
+        results = await design_service.validate_architecture(session_id)
+        placement_results = [r for r in results if r.rule_id == "public-resource-private-subnet"]
+        assert len(placement_results) > 0

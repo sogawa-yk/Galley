@@ -1,12 +1,16 @@
 """アーキテクチャバリデーションロジック。"""
 
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from galley.models.architecture import Architecture
+from galley.models.architecture import Architecture, Component
 from galley.models.validation import ValidationResult, ValidationRule
+
+# OCI APIリソース名にスペースを許容しないサービスタイプ
+_NAME_STRICT_SERVICES: set[str] = {"nosql", "objectstorage", "streaming"}
 
 
 class ArchitectureValidator:
@@ -54,6 +58,10 @@ class ArchitectureValidator:
         for rule in rules:
             rule_results = self._apply_rule(rule, architecture, component_map)
             results.extend(rule_results)
+
+        # コンポーネント単体のバリデーション（コードベースのルール）
+        results.extend(self._check_naming_rules(architecture))
+        results.extend(self._check_subnet_placement(architecture))
 
         return results
 
@@ -114,3 +122,88 @@ class ArchitectureValidator:
                     return True
 
         return False
+
+    @staticmethod
+    def _check_naming_rules(architecture: Architecture) -> list[ValidationResult]:
+        """コンポーネント名のOCI命名規則チェック。
+
+        スペースを含む名前のnosql/objectstorage/streamingコンポーネントを検出する。
+        """
+        results: list[ValidationResult] = []
+        for comp in architecture.components:
+            if comp.service_type in _NAME_STRICT_SERVICES and (
+                " " in comp.display_name or not re.match(r"^[a-zA-Z0-9_-]+$", comp.display_name)
+            ):
+                results.append(
+                    ValidationResult(
+                        severity="warning",
+                        rule_id="naming-convention",
+                        message=(
+                            f"{comp.display_name} ({comp.service_type}): "
+                            "OCI APIリソース名に使用できない文字が含まれています"
+                        ),
+                        affected_components=[comp.id],
+                        recommendation=(
+                            "display_nameには英数字、アンダースコア、ハイフンのみを使用してください。"
+                            "IaC生成時にはサニタイズされますが、意図した名前と異なる可能性があります。"
+                        ),
+                    )
+                )
+        return results
+
+    @staticmethod
+    def _check_subnet_placement(architecture: Architecture) -> list[ValidationResult]:
+        """publicリソースのサブネット配置整合性チェック。
+
+        deployed_in接続を持つpublicリソースがprivateサブネットに配置されていないか検出する。
+        """
+        results: list[ValidationResult] = []
+        component_map: dict[str, Component] = {c.id: c for c in architecture.components}
+
+        # publicリソースの判定ルール
+        _PUBLIC_SERVICES: dict[str, dict[str, str]] = {
+            "loadbalancer": {"config_key": "is_private", "private_value": "true"},
+            "apigateway": {"config_key": "endpoint_type", "private_value": "private"},
+        }
+
+        for conn in architecture.connections:
+            if conn.connection_type != "deployed_in":
+                continue
+
+            source = component_map.get(conn.source_id)
+            target = component_map.get(conn.target_id)
+            if source is None or target is None:
+                continue
+
+            # source が publicリソースで、target が private subnet の場合
+            if target.service_type != "subnet":
+                continue
+
+            is_private_subnet = str(target.config.get("prohibit_public_ip", "false")).lower() == "true"
+            if not is_private_subnet:
+                continue
+
+            rule = _PUBLIC_SERVICES.get(source.service_type)
+            if rule is None:
+                continue
+
+            config_val = str(source.config.get(rule["config_key"], "")).lower()
+            is_private_resource = config_val == rule["private_value"]
+            if not is_private_resource:
+                results.append(
+                    ValidationResult(
+                        severity="error",
+                        rule_id="public-resource-private-subnet",
+                        message=(
+                            f"{source.display_name} ({source.service_type}): "
+                            f"パブリックリソースがプライベートサブネット({target.display_name})に配置されています"
+                        ),
+                        affected_components=[conn.source_id, conn.target_id],
+                        recommendation=(
+                            "パブリックリソース（Public LB, Public API Gateway等）は"
+                            "パブリックサブネットに配置してください"
+                        ),
+                    )
+                )
+
+        return results
