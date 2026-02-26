@@ -216,18 +216,9 @@ class TestInfraPromptsRegistration:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             prompts = await client.list_prompts()
             prompt_names = {p.name for p in prompts}
-            assert "terraform_debug_loop" in prompt_names
             assert "oci_resource_check" in prompt_names
             assert "infra_cleanup" in prompt_names
-
-    async def test_terraform_debug_loop_contains_session_id(self, mcp_server: object) -> None:
-        """terraform_debug_loopプロンプトはsession_idを含むテキストを返す。"""
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.get_prompt("terraform_debug_loop", {"session_id": "test-session-123"})
-            text = result.messages[0].content.text  # type: ignore[union-attr]
-            assert "test-session-123" in text
-            assert "export_iac" in text
-            assert "run_terraform_plan" in text
+            assert "terraform_debug_loop" not in prompt_names
 
     async def test_oci_resource_check_contains_guidance(self, mcp_server: object) -> None:
         """oci_resource_checkプロンプトはOCI CLIの使い方ガイドを返す。"""

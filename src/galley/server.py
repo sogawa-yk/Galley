@@ -5,10 +5,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from galley.config import ServerConfig
-from galley.prompts.app import register_app_prompts
-from galley.prompts.design import register_design_prompts
-from galley.prompts.hearing import register_hearing_prompts
 from galley.prompts.infra import register_infra_prompts
+from galley.prompts.workflow import register_workflow_prompts
 from galley.resources.design import register_design_resources
 from galley.resources.hearing import register_hearing_resources
 from galley.services.app import AppService
@@ -49,21 +47,21 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     # MCPインターフェース登録 — ヒアリング層
     register_hearing_tools(mcp, hearing_service, config_dir=config.config_dir)
     register_hearing_resources(mcp, config.config_dir)
-    register_hearing_prompts(mcp)
 
     # MCPインターフェース登録 — 設計層
     register_design_tools(mcp, design_service)
     register_export_tools(mcp, design_service)
     register_design_resources(mcp, config.config_dir)
-    register_design_prompts(mcp)
 
     # MCPインターフェース登録 — インフラ層
     register_infra_tools(mcp, infra_service)
-    register_infra_prompts(mcp)
 
     # MCPインターフェース登録 — アプリケーション層
     register_app_tools(mcp, app_service)
-    register_app_prompts(mcp)
+
+    # MCPインターフェース登録 — プロンプト
+    register_workflow_prompts(mcp)
+    register_infra_prompts(mcp)
 
     # ヘルスチェックエンドポイント
     @mcp.custom_route("/health", methods=["GET"])

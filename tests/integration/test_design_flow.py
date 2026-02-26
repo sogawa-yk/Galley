@@ -301,5 +301,5 @@ class TestDesignFlowViaMCP:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             prompts = await client.list_prompts()
             prompt_names = {p.name for p in prompts}
-            assert "auto_design" in prompt_names
-            assert "interactive_design" in prompt_names
+            assert "build_infrastructure" in prompt_names
+            assert "build_full_stack" in prompt_names

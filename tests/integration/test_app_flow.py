@@ -60,17 +60,6 @@ class TestAppToolsRegistration:
             assert "check_app_status" in tool_names
 
 
-class TestAppPromptsRegistration:
-    async def test_app_prompts_are_registered(self, mcp_server: object) -> None:
-        """アプリケーション系プロンプトがMCPサーバーに登録されている。"""
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            prompts = await client.list_prompts()
-            prompt_names = {p.name for p in prompts}
-            assert "template_selection" in prompt_names
-            assert "app_customization" in prompt_names
-            assert "app_deploy" in prompt_names
-
-
 class TestListTemplatesViaMCP:
     async def test_list_templates_returns_templates(self, mcp_server: object) -> None:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]

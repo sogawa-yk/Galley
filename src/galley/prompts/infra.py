@@ -7,35 +7,6 @@ def register_infra_prompts(mcp: FastMCP) -> None:
     """インフラ関連のMCPプロンプトを登録する。"""
 
     @mcp.prompt()
-    async def terraform_debug_loop(session_id: str) -> str:
-        """Terraform自動デバッグループを開始するためのプロンプト。
-
-        設計済みアーキテクチャからTerraformコードを生成し、
-        plan→エラー修正→再plan→applyの自動デバッグループを実行する
-        フローをガイドします。
-
-        Args:
-            session_id: セッションID。
-        """
-        return (
-            f"セッション `{session_id}` のアーキテクチャをTerraformで構築します。\n\n"
-            "## 手順\n\n"
-            "1. `export_iac` ツールでTerraformテンプレートを取得してください。\n"
-            "2. テンプレートを元に、要件に合わせたTerraformコードを作成・配置してください。\n"
-            "3. `run_terraform_plan` ツールでplanを実行してください。\n"
-            "4. planが成功したら、`run_terraform_apply` ツールでapplyを実行してください。\n\n"
-            "## エラー時の自動修正\n\n"
-            "- `run_terraform_plan` がエラーを返した場合、`stderr` の内容を分析してください。\n"
-            "- エラーの原因を特定し、Terraformコードを修正してください。\n"
-            "- 修正後、再度 `run_terraform_plan` を実行してください。\n"
-            "- planが成功するまでこのループを繰り返してください。\n\n"
-            "## 注意事項\n\n"
-            "- `plan_summary` フィールドで変更内容のサマリーを確認してから apply を実行してください。\n"
-            "- apply 中にエラーが発生した場合も、`stderr` を分析して修正→再実行してください。\n"
-            "- 同一セッションで複数のTerraform操作を同時に実行することはできません。\n"
-        )
-
-    @mcp.prompt()
     async def oci_resource_check() -> str:
         """OCI CLIでリソース情報を確認するためのプロンプト。
 

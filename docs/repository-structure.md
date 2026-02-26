@@ -160,9 +160,8 @@ galley/
 **役割**: MCPプロンプトの定義。FastMCPの `@mcp.prompt()` デコレータでプロンプトを登録。
 
 **配置ファイル**:
-- `hearing.py`: ヒアリング開始・再開用プロンプト
-- `design.py`: 設計支援用プロンプト
-- `deploy.py`: デプロイ支援用プロンプト
+- `workflow.py`: エンドツーエンドワークフロープロンプト（`build_infrastructure`, `build_full_stack`）
+- `infra.py`: インフラユーティリティプロンプト（`oci_resource_check`, `infra_cleanup`）
 
 **依存関係**:
 - 依存可能: models/
