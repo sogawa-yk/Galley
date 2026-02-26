@@ -42,7 +42,7 @@ variable "image_tag" {
 }
 
 variable "galley_image_url" {
-  description = "GalleyコンテナイメージのフルURL。未指定時はOCIRリポジトリから自動生成。"
+  description = "GalleyコンテナイメージのフルURL（例: kix.ocir.io/namespace/galley:latest）。空欄の場合、region・namespace・image_tagから自動生成されます。"
   type        = string
   default     = ""
 }
