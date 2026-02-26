@@ -38,7 +38,7 @@ variable "vcn_cidr" {
 variable "galley_image_url" {
   description = "GalleyコンテナイメージのフルURL"
   type        = string
-  default     = "kix.ocir.io/orasejapan/galley:latest"
+  default     = "ghcr.io/sogawa-yk/galley:latest"
 }
 
 variable "container_instance_shape" {
