@@ -1,3 +1,8 @@
+variable "tenancy_ocid" {
+  description = "テナンシーOCID（Resource Managerが自動注入）"
+  type        = string
+}
+
 variable "compartment_ocid" {
   description = "Galleyインフラを配置するコンパートメントOCID"
   type        = string
