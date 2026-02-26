@@ -1,5 +1,7 @@
 """DesignServiceのユニットテスト。"""
 
+from pathlib import Path
+
 import pytest
 
 from galley.models.errors import (
@@ -466,6 +468,23 @@ class TestExportIac:
         assert "oci_core_security_list" in components_tf
         assert "443" in components_tf
 
+    async def test_export_iac_security_list_port_zero_replaced_with_default(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """ingress_port=0の場合はデフォルト22に置き換えられることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "security_list", "display_name": "SL", "config": {"ingress_port": "0"}},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "min = 0" not in components_tf
+        assert "min = 22" in components_tf
+
     async def test_export_iac_generates_tfvars_example(
         self, hearing_service: HearingService, design_service: DesignService
     ) -> None:
@@ -568,6 +587,34 @@ class TestExportIac:
         components_tf = result["terraform_files"]["components.tf"]
         assert "v1.28" not in components_tf
         assert "v1.31.1" in components_tf
+
+    async def test_export_iac_oke_has_service_lb_subnet_ids(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKEクラスタにservice_lb_subnet_idsが含まれることを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "service_lb_subnet_ids" in components_tf
+
+    async def test_export_iac_oke_node_pool_uses_node_subnet_id(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKEノードプールがnode_subnet_id変数を使うことを確認。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "node_subnet_id"' in variables_tf
 
     async def test_export_iac_adb_includes_admin_password_variable(
         self, hearing_service: HearingService, design_service: DesignService
@@ -725,12 +772,15 @@ class TestExpandVcnNetwork:
         components_tf = result["terraform_files"]["components.tf"]
         assert "oci_core_subnet" in components_tf
         assert "oci_core_internet_gateway" in components_tf
+        assert "oci_core_nat_gateway" in components_tf
+        assert "oci_core_service_gateway" in components_tf
         assert "oci_core_route_table" in components_tf
         assert "oci_core_security_list" in components_tf
         # var.subnet_id, var.vcn_id等がローカル参照に置換される
         assert "var.subnet_id" not in components_tf
         assert "var.vcn_id" not in components_tf
         assert "var.gateway_id" not in components_tf
+        assert "var.service_gateway_id" not in components_tf
 
     async def test_vcn_with_existing_subnet_skips_subnet_generation(
         self, hearing_service: HearingService, design_service: DesignService
@@ -887,6 +937,28 @@ class TestExportAll:
         assert "mermaid" in result
         assert "terraform_files" in result
         assert "terraform_dir" in result
+
+    async def test_export_all_reads_updated_files_from_disk(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """export_allはupdate_terraform_fileで修正済みのファイルをディスクから読む。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "vcn", "display_name": "Test VCN", "config": {"cidr_block": "10.0.0.0/16"}}],
+            connections=[],
+        )
+        # 初回生成
+        iac_result = await design_service.export_iac(session_id)
+        terraform_dir = Path(iac_result["terraform_dir"])
+
+        # ディスク上のファイルを直接修正（update_terraform_fileと同等の操作）
+        modified_content = "# Modified by test\n" + iac_result["terraform_files"]["main.tf"]
+        (terraform_dir / "main.tf").write_text(modified_content, encoding="utf-8")
+
+        # export_allはディスクの最新内容を返すべき
+        result = await design_service.export_all(session_id)
+        assert result["terraform_files"]["main.tf"].startswith("# Modified by test")
 
 
 class TestResourceNameSanitization:

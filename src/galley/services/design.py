@@ -57,6 +57,10 @@ _TF_RESOURCE_TEMPLATES: dict[str, str] = {
     is_public_ip_enabled = true
     subnet_id            = var.subnet_id
   }}
+
+  options {{
+    service_lb_subnet_ids = [var.subnet_id]
+  }}
 }}
 
 resource "oci_containerengine_node_pool" "{name}_node_pool" {{
@@ -76,7 +80,7 @@ resource "oci_containerengine_node_pool" "{name}_node_pool" {{
 
     placement_configs {{
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
-      subnet_id           = var.subnet_id
+      subnet_id           = var.node_subnet_id
     }}
   }}
 
@@ -188,7 +192,7 @@ resource "oci_functions_function" "{name}" {{
     destination       = "{destination}"
     destination_type  = "CIDR_BLOCK"
   }}
-}}""",
+{sgw_route_block}}}""",
     "security_list": """resource "oci_core_security_list" "{name}" {{
   compartment_id = var.compartment_ocid
   vcn_id         = var.vcn_id
@@ -218,7 +222,8 @@ _TF_REQUIRED_VARS: dict[str, list[dict[str, str]]] = {
     ],
     "oke": [
         {"name": "vcn_id", "description": "VCN OCID", "type": "string"},
-        {"name": "subnet_id", "description": "Subnet OCID", "type": "string"},
+        {"name": "subnet_id", "description": "Subnet OCID (API endpoint)", "type": "string"},
+        {"name": "node_subnet_id", "description": "Node pool subnet OCID", "type": "string"},
     ],
     "adb": [
         {"name": "adb_admin_password", "description": "ADB admin password", "type": "string", "sensitive": "true"},
@@ -254,6 +259,7 @@ _TF_REQUIRED_VARS: dict[str, list[dict[str, str]]] = {
     "route_table": [
         {"name": "vcn_id", "description": "VCN OCID", "type": "string"},
         {"name": "gateway_id", "description": "Gateway OCID for route rule", "type": "string"},
+        {"name": "service_gateway_id", "description": "Service Gateway OCID", "type": "string"},
     ],
     "security_list": [
         {"name": "vcn_id", "description": "VCN OCID", "type": "string"},
@@ -288,7 +294,15 @@ _TF_REQUIRED_DATA_SOURCES: dict[str, list[str]] = {
         ),
     ],
     "service_gateway": [
-        'data "oci_core_services" "all_services" {\n}',
+        (
+            'data "oci_core_services" "all_services" {\n'
+            "  filter {\n"
+            '    name   = "name"\n'
+            '    values = ["All .* Services In Oracle Services Network"]\n'
+            "    regex  = true\n"
+            "  }\n"
+            "}"
+        ),
     ],
 }
 
@@ -326,7 +340,7 @@ _TF_DEFAULTS: dict[str, dict[str, str]] = {
     "internet_gateway": {},
     "nat_gateway": {},
     "service_gateway": {},
-    "route_table": {"destination": "0.0.0.0/0"},
+    "route_table": {"destination": "0.0.0.0/0", "sgw_route_block": ""},
     "security_list": {"ingress_source": "0.0.0.0/0", "ingress_port": "22"},
 }
 
@@ -723,12 +737,14 @@ class DesignService:
         if private_subnet_ref:
             refs["_private_subnet_ref"] = private_subnet_ref
 
-        # Internet Gateway / NAT Gateway
+        # Internet Gateway / NAT Gateway / Service Gateway
         for comp in components:
             if comp.service_type == "internet_gateway":
                 refs["_igw_ref"] = f"oci_core_internet_gateway.{_safe(comp.display_name)}.id"
             elif comp.service_type == "nat_gateway":
                 refs["_nat_gw_ref"] = f"oci_core_nat_gateway.{_safe(comp.display_name)}.id"
+            elif comp.service_type == "service_gateway":
+                refs["var.service_gateway_id"] = f"oci_core_service_gateway.{_safe(comp.display_name)}.id"
 
         # デフォルトgateway: IGW（後方互換）
         if "_igw_ref" in refs:
@@ -808,7 +824,9 @@ class DesignService:
                 is_private_resource = str(comp.config.get("is_private", "false")).lower() == "true"
             elif comp.service_type == "apigateway":
                 is_private_resource = comp.config.get("endpoint_type", "PUBLIC").upper() == "PRIVATE"
-            # OKEはデフォルトでpublic endpoint
+            elif comp.service_type == "oke" and "_private_subnet_ref" in local_refs:
+                # OKE: endpointはpublic、node_poolはprivateサブネット
+                refs["var.node_subnet_id"] = local_refs["_private_subnet_ref"]
 
             if is_private_resource and "_private_subnet_ref" in local_refs:
                 refs["var.subnet_id"] = local_refs["_private_subnet_ref"]
@@ -830,7 +848,8 @@ class DesignService:
     def _expand_vcn_network(components: list[Component]) -> list[Component]:
         """VCNコンポーネントがある場合、欠落しているネットワークリソースを自動補完する。
 
-        元のリストは変更せず、新しいリストを返す。
+        public/private両方のサブネット・ルートテーブル・セキュリティリストを生成し、
+        Service Gatewayも自動追加する。元のリストは変更せず、新しいリストを返す。
         """
         service_types = {c.service_type for c in components}
         if "vcn" not in service_types:
@@ -860,23 +879,58 @@ class DesignService:
                 )
             )
 
+        if "service_gateway" not in service_types:
+            expanded.append(
+                Component(
+                    id=str(uuid.uuid4()),
+                    service_type="service_gateway",
+                    display_name=f"{vcn_name} Service GW",
+                    config={},
+                )
+            )
+
         if "security_list" not in service_types:
             expanded.append(
                 Component(
                     id=str(uuid.uuid4()),
                     service_type="security_list",
-                    display_name=f"{vcn_name} Security List",
-                    config={"ingress_source": "0.0.0.0/0", "ingress_port": "22"},
+                    display_name=f"{vcn_name} Public Security List",
+                    config={"ingress_source": "0.0.0.0/0", "ingress_port": "443"},
                 )
             )
+            expanded.append(
+                Component(
+                    id=str(uuid.uuid4()),
+                    service_type="security_list",
+                    display_name=f"{vcn_name} Private Security List",
+                    config={"ingress_source": "10.0.0.0/16", "ingress_port": "8000"},
+                )
+            )
+
+        # Private route tableにはService Gatewayルートを含める
+        _sgw_route = (
+            "\n  route_rules {\n"
+            "    network_entity_id = var.service_gateway_id\n"
+            "    destination       = data.oci_core_services.all_services.services[0].cidr_block\n"
+            '    destination_type  = "SERVICE_CIDR_BLOCK"\n'
+            "  }\n"
+        )
 
         if "route_table" not in service_types:
             expanded.append(
                 Component(
                     id=str(uuid.uuid4()),
                     service_type="route_table",
-                    display_name=f"{vcn_name} Route Table",
-                    config={"destination": "0.0.0.0/0"},
+                    display_name=f"{vcn_name} Public Route Table",
+                    config={"destination": "0.0.0.0/0", "sgw_route_block": ""},
+                )
+            )
+            expanded.append(
+                Component(
+                    id=str(uuid.uuid4()),
+                    service_type="route_table",
+                    display_name=f"{vcn_name} Private Route Table",
+                    config={"destination": "0.0.0.0/0", "sgw_route_block": _sgw_route},
                 )
             )
 
@@ -887,6 +941,14 @@ class DesignService:
                     service_type="subnet",
                     display_name=f"{vcn_name} Public Subnet",
                     config={"cidr_block": "10.0.1.0/24", "prohibit_public_ip": "false"},
+                )
+            )
+            expanded.append(
+                Component(
+                    id=str(uuid.uuid4()),
+                    service_type="subnet",
+                    display_name=f"{vcn_name} Private Subnet",
+                    config={"cidr_block": "10.0.2.0/24", "prohibit_public_ip": "true"},
                 )
             )
 
@@ -932,6 +994,12 @@ class DesignService:
         # ADB: ユーザー入力の workload_type を OCI API値に変換
         if service_type == "adb" and "workload_type" in params:
             params["workload_type"] = _ADB_WORKLOAD_MAP.get(params["workload_type"], params["workload_type"])
+
+        # Security List: ポート番号の最低値ガード（0は無効）
+        if service_type == "security_list":
+            port = int(params.get("ingress_port", "22") or "22")
+            if port <= 0:
+                params["ingress_port"] = "22"
 
         # ADB: プライベートエンドポイント設定
         if service_type == "adb":
@@ -1086,6 +1154,9 @@ class DesignService:
     async def export_all(self, session_id: str) -> dict[str, Any]:
         """全成果物を一括出力する。
 
+        terraform_dirに既存ファイルがある場合はディスクから読み込む（update_terraform_file
+        での修正を反映するため）。存在しない場合はexport_iacで新規生成する。
+
         Args:
             session_id: セッションID。
 
@@ -1096,8 +1167,29 @@ class DesignService:
             SessionNotFoundError: セッションが存在しない場合。
             ArchitectureNotFoundError: アーキテクチャが未設定の場合。
         """
+        session = await self._storage.load_session(session_id)
+        if session.architecture is None:
+            raise ArchitectureNotFoundError(session_id)
+
         summary = await self.export_summary(session_id)
         mermaid = await self.export_mermaid(session_id)
+
+        # terraform_dirに既存ファイルがあればディスクから読み込む
+        terraform_dir = self._storage.get_session_dir(session_id) / "terraform"
+        if terraform_dir.exists():
+            files: dict[str, str] = {}
+            for tf_file in sorted(terraform_dir.iterdir()):
+                if tf_file.is_file():
+                    files[tf_file.name] = tf_file.read_text(encoding="utf-8")
+            if files:
+                return {
+                    "summary": summary,
+                    "mermaid": mermaid,
+                    "terraform_files": files,
+                    "terraform_dir": str(terraform_dir),
+                }
+
+        # 既存ファイルがなければ新規生成
         iac_result = await self.export_iac(session_id)
 
         return {
