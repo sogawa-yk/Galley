@@ -35,16 +35,10 @@ variable "vcn_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "image_tag" {
-  description = "Galleyコンテナイメージのタグ"
-  type        = string
-  default     = "latest"
-}
-
 variable "galley_image_url" {
-  description = "GalleyコンテナイメージのフルURL（例: kix.ocir.io/namespace/galley:latest）。空欄の場合、region・namespace・image_tagから自動生成されます。"
+  description = "GalleyコンテナイメージのフルURL"
   type        = string
-  default     = ""
+  default     = "kix.ocir.io/orasejapan/galley:latest"
 }
 
 variable "container_instance_shape" {

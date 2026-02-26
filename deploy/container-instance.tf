@@ -2,11 +2,6 @@
 # Container Instance - Galley MCPサーバーの実行環境
 # ============================================================
 
-locals {
-  # コンテナイメージURL（未指定時はデフォルトのOCIRリポジトリ）
-  container_image_url = var.galley_image_url != "" ? var.galley_image_url : "${var.region}.ocir.io/${data.oci_objectstorage_namespace.current.namespace}/galley:${var.image_tag}"
-}
-
 resource "oci_container_instances_container_instance" "galley" {
   compartment_id       = var.compartment_ocid
   availability_domain  = local.availability_domain
@@ -28,7 +23,7 @@ resource "oci_container_instances_container_instance" "galley" {
 
   containers {
     display_name = "${local.name_prefix}-mcp"
-    image_url    = local.container_image_url
+    image_url    = var.galley_image_url
 
     environment_variables = {
       "GALLEY_HOST"             = "0.0.0.0"
