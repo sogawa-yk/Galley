@@ -47,15 +47,17 @@ def register_export_tools(mcp: FastMCP, design_service: DesignService) -> None:
     async def export_iac(session_id: str) -> dict[str, Any]:
         """IaCテンプレート（Terraform）を出力する。
 
-        アーキテクチャに基づいたTerraformファイルのスケルトンを生成します。
+        アーキテクチャに基づいた動作するTerraformリソース定義を生成します。
         main.tf、variables.tf、components.tf が含まれます。
+        生成されたファイルはサーバー側に自動的に書き出されます。
+        返却される terraform_dir を run_terraform_plan にそのまま渡せます。
 
         Args:
             session_id: セッションID。
         """
         try:
-            terraform_files = await design_service.export_iac(session_id)
-            return {"terraform_files": terraform_files}
+            result = await design_service.export_iac(session_id)
+            return result
         except GalleyError as e:
             return {"error": type(e).__name__, "message": str(e)}
 

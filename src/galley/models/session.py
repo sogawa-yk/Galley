@@ -44,5 +44,6 @@ class Session(BaseModel):
     answers: dict[str, Answer] = Field(default_factory=dict)
     hearing_result: HearingResult | None = None
     architecture: Architecture | None = None
+    rm_stack_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

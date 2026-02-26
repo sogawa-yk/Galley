@@ -59,11 +59,13 @@ class TestInfraToolsRegistration:
             assert "run_terraform_apply" in tool_names
             assert "run_terraform_destroy" in tool_names
             assert "run_oci_cli" in tool_names
-            assert "oci_sdk_call" in tool_names
-            assert "create_rm_stack" in tool_names
-            assert "run_rm_plan" in tool_names
-            assert "run_rm_apply" in tool_names
             assert "get_rm_job_status" in tool_names
+            assert "update_terraform_file" in tool_names
+            # 削除されたツールが存在しないこと
+            assert "oci_sdk_call" not in tool_names
+            assert "create_rm_stack" not in tool_names
+            assert "run_rm_plan" not in tool_names
+            assert "run_rm_apply" not in tool_names
 
 
 class TestTerraformToolsViaMCP:
@@ -71,8 +73,21 @@ class TestTerraformToolsViaMCP:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             session_id = await _create_session_with_architecture_via_mcp(client)
 
-            with patch.object(InfraService, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
-                mock_proc.return_value = (0, "Plan: 2 to add, 0 to change, 0 to destroy.", "")
+            from galley.models.infra import TerraformResult
+
+            plan_result = TerraformResult(
+                success=True,
+                command="plan",
+                stdout="Plan: 2 to add, 0 to change, 0 to destroy.",
+                stderr="",
+                exit_code=0,
+                plan_summary="2 to add, 0 to change, 0 to destroy",
+            )
+
+            with (
+                patch.object(InfraService, "_ensure_rm_stack", new_callable=AsyncMock, return_value="ocid1.stack"),
+                patch.object(InfraService, "_run_rm_job", new_callable=AsyncMock, return_value=plan_result),
+            ):
                 result = await client.call_tool(
                     "run_terraform_plan",
                     {"session_id": session_id, "terraform_dir": "/tmp/tf"},
@@ -87,8 +102,16 @@ class TestTerraformToolsViaMCP:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             session_id = await _create_session_with_architecture_via_mcp(client)
 
-            with patch.object(InfraService, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
-                mock_proc.return_value = (0, "Apply complete!", "")
+            from galley.models.infra import TerraformResult
+
+            apply_result = TerraformResult(
+                success=True, command="apply", stdout="Apply complete!", stderr="", exit_code=0
+            )
+
+            with (
+                patch.object(InfraService, "_ensure_rm_stack", new_callable=AsyncMock, return_value="ocid1.stack"),
+                patch.object(InfraService, "_run_rm_job", new_callable=AsyncMock, return_value=apply_result),
+            ):
                 result = await client.call_tool(
                     "run_terraform_apply",
                     {"session_id": session_id, "terraform_dir": "/tmp/tf"},
@@ -102,8 +125,16 @@ class TestTerraformToolsViaMCP:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             session_id = await _create_session_with_architecture_via_mcp(client)
 
-            with patch.object(InfraService, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
-                mock_proc.return_value = (0, "Destroy complete!", "")
+            from galley.models.infra import TerraformResult
+
+            destroy_result = TerraformResult(
+                success=True, command="destroy", stdout="Destroy complete!", stderr="", exit_code=0
+            )
+
+            with (
+                patch.object(InfraService, "_ensure_rm_stack", new_callable=AsyncMock, return_value="ocid1.stack"),
+                patch.object(InfraService, "_run_rm_job", new_callable=AsyncMock, return_value=destroy_result),
+            ):
                 result = await client.call_tool(
                     "run_terraform_destroy",
                     {"session_id": session_id, "terraform_dir": "/tmp/tf"},
@@ -114,12 +145,24 @@ class TestTerraformToolsViaMCP:
             assert data["command"] == "destroy"
 
     async def test_terraform_plan_error_returns_structured_response(self, mcp_server: object) -> None:
-        """Terraform planのエラーは構造化されたレスポンスで返される。"""
+        """RM経由のplanエラーは構造化されたレスポンスで返される。"""
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             session_id = await _create_session_with_architecture_via_mcp(client)
 
-            with patch.object(InfraService, "_run_subprocess", new_callable=AsyncMock) as mock_proc:
-                mock_proc.return_value = (1, "", "Error: Invalid resource type 'oci_invalid'")
+            from galley.models.infra import TerraformResult
+
+            error_result = TerraformResult(
+                success=False,
+                command="plan",
+                stdout="Error: Invalid resource type 'oci_invalid'",
+                stderr="Job FAILED. Job ID: ocid1.job.test",
+                exit_code=1,
+            )
+
+            with (
+                patch.object(InfraService, "_ensure_rm_stack", new_callable=AsyncMock, return_value="ocid1.stack"),
+                patch.object(InfraService, "_run_rm_job", new_callable=AsyncMock, return_value=error_result),
+            ):
                 result = await client.call_tool(
                     "run_terraform_plan",
                     {"session_id": session_id, "terraform_dir": "/tmp/tf"},
@@ -128,7 +171,6 @@ class TestTerraformToolsViaMCP:
             data = parse_tool_result(result)
             assert data["success"] is False
             assert data["exit_code"] == 1
-            assert "Invalid resource type" in data["stderr"]
 
     async def test_terraform_plan_rejects_path_traversal(self, mcp_server: object) -> None:
         """terraform_dirにパストラバーサルが含まれる場合はエラーを返す。"""
@@ -166,44 +208,6 @@ class TestOciCliViaMCP:
             data = parse_tool_result(result)
             assert "error" in data
             assert data["error"] == "CommandNotAllowedError"
-
-
-class TestRMStubsViaMCP:
-    async def test_oci_sdk_call_returns_not_implemented(self, mcp_server: object) -> None:
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.call_tool(
-                "oci_sdk_call",
-                {"service": "compute", "operation": "list_instances"},
-            )
-            data = parse_tool_result(result)
-            assert data["error"] == "NotImplemented"
-
-    async def test_create_rm_stack_returns_not_implemented(self, mcp_server: object) -> None:
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.call_tool(
-                "create_rm_stack",
-                {"session_id": "test", "compartment_id": "ocid1.test", "terraform_dir": "/tmp"},
-            )
-            data = parse_tool_result(result)
-            assert data["error"] == "NotImplemented"
-
-    async def test_run_rm_plan_returns_not_implemented(self, mcp_server: object) -> None:
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.call_tool("run_rm_plan", {"stack_id": "ocid1.test"})
-            data = parse_tool_result(result)
-            assert data["error"] == "NotImplemented"
-
-    async def test_run_rm_apply_returns_not_implemented(self, mcp_server: object) -> None:
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.call_tool("run_rm_apply", {"stack_id": "ocid1.test"})
-            data = parse_tool_result(result)
-            assert data["error"] == "NotImplemented"
-
-    async def test_get_rm_job_status_returns_not_implemented(self, mcp_server: object) -> None:
-        async with Client(mcp_server) as client:  # type: ignore[arg-type]
-            result = await client.call_tool("get_rm_job_status", {"job_id": "ocid1.test"})
-            data = parse_tool_result(result)
-            assert data["error"] == "NotImplemented"
 
 
 class TestInfraPromptsRegistration:

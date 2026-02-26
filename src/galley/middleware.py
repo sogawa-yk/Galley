@@ -1,8 +1,9 @@
 """URLトークン認証ミドルウェア。"""
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
@@ -15,11 +16,11 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
 
     SKIP_PATHS = {"/health"}
 
-    def __init__(self, app, url_token: str = ""):
+    def __init__(self, app: ASGIApp, url_token: str = "") -> None:
         super().__init__(app)
         self.url_token = url_token
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if not self.url_token:
             return await call_next(request)
 

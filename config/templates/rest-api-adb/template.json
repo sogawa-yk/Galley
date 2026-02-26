@@ -1,0 +1,33 @@
+{
+  "name": "rest-api-adb",
+  "display_name": "REST API + Autonomous Database",
+  "description": "Python FastAPIベースのREST APIとOracle Autonomous Databaseを使用するアプリケーションテンプレート。OKEクラスターへのデプロイに対応。",
+  "parameters": [
+    {
+      "name": "app_name",
+      "description": "アプリケーション名（小文字英数字とハイフン）",
+      "param_type": "string",
+      "required": true,
+      "default": "my-app"
+    },
+    {
+      "name": "app_port",
+      "description": "アプリケーションのリッスンポート",
+      "param_type": "number",
+      "required": false,
+      "default": 8080
+    },
+    {
+      "name": "db_name",
+      "description": "Autonomous Databaseの表示名",
+      "param_type": "string",
+      "required": false,
+      "default": "appdb"
+    }
+  ],
+  "protected_paths": [
+    "src/db.py",
+    "src/auth.py",
+    "Dockerfile"
+  ]
+}

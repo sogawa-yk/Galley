@@ -24,7 +24,8 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return {"error": "ConfigError", "message": "config_dir is not set"}
         questions_file = config_dir / "hearing-questions.yaml"
         with open(questions_file, encoding="utf-8") as f:
-            return yaml.safe_load(f)
+            data: dict[str, Any] = yaml.safe_load(f)
+            return data
 
     @mcp.tool()
     async def get_hearing_flow() -> dict[str, Any]:
@@ -37,7 +38,8 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return {"error": "ConfigError", "message": "config_dir is not set"}
         flow_file = config_dir / "hearing-flow.yaml"
         with open(flow_file, encoding="utf-8") as f:
-            return yaml.safe_load(f)
+            data: dict[str, Any] = yaml.safe_load(f)
+            return data
 
     @mcp.tool()
     async def create_session() -> dict[str, Any]:
@@ -120,6 +122,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
                 "requirements": [r.model_dump() for r in result.requirements],
                 "constraints": result.constraints,
                 "completed_at": result.completed_at.isoformat(),
+                "next_step": "Use save_architecture to design the architecture based on the hearing results.",
             }
         except GalleyError as e:
             return {"error": type(e).__name__, "message": str(e)}

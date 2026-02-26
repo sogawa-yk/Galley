@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from galley.config import ServerConfig
+from galley.services.app import AppService
 from galley.services.design import DesignService
 from galley.services.hearing import HearingService
 from galley.services.infra import InfraService
@@ -45,6 +46,12 @@ def design_service(storage: StorageService, config_dir: Path) -> DesignService:
 def infra_service(storage: StorageService, config_dir: Path) -> InfraService:
     """テスト用InfraService。"""
     return InfraService(storage=storage, config_dir=config_dir)
+
+
+@pytest.fixture
+def app_service(storage: StorageService, config_dir: Path) -> AppService:
+    """テスト用AppService。"""
+    return AppService(storage=storage, config_dir=config_dir)
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ services:
         default: 3
       kubernetes_version:
         type: string
-        default: "v1.28"
+        default: "v1.31.1"
 
   - service_type: adb
     display_name: "Autonomous Database (ADB)"
@@ -125,3 +125,49 @@ services:
       table_limits:
         type: string
         default: "maxReadUnits=50,maxWriteUnits=50,maxStorageInGBs=25"
+
+  - service_type: subnet
+    display_name: "Subnet"
+    description: "VCN内のサブネット。リソースのネットワーク配置に使用。"
+    config_schema:
+      cidr_block:
+        type: string
+        default: "10.0.1.0/24"
+      prohibit_public_ip:
+        type: choice
+        choices: [true, false]
+        default: false
+
+  - service_type: internet_gateway
+    display_name: "Internet Gateway"
+    description: "VCNのインターネットゲートウェイ。パブリックサブネットからのインターネットアクセスに使用。"
+    config_schema: {}
+
+  - service_type: nat_gateway
+    display_name: "NAT Gateway"
+    description: "VCNのNATゲートウェイ。プライベートサブネットからのアウトバウンドインターネットアクセスに使用。"
+    config_schema: {}
+
+  - service_type: service_gateway
+    display_name: "Service Gateway"
+    description: "VCNのサービスゲートウェイ。OCI内部サービスへのプライベートアクセスに使用。"
+    config_schema: {}
+
+  - service_type: route_table
+    display_name: "Route Table"
+    description: "VCNのルートテーブル。サブネットのルーティング設定に使用。"
+    config_schema:
+      destination:
+        type: string
+        default: "0.0.0.0/0"
+
+  - service_type: security_list
+    display_name: "Security List"
+    description: "VCNのセキュリティリスト。サブネットのファイアウォールルール設定に使用。"
+    config_schema:
+      ingress_source:
+        type: string
+        default: "0.0.0.0/0"
+      ingress_port:
+        type: number
+        default: 22

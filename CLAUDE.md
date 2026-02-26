@@ -81,6 +81,10 @@
 
 > デプロイ・インフラ作業時は必ず `docs/environment.md` を参照すること。
 
+#### フィードバック（`docs/feedbacks/`）
+- Claude Desktop等で実際に操作した結果の問題点・改善要望を記録
+- `/fix-feedback [ファイル名]` で自動修正ワークフローを実行
+
 ### 作業単位のドキュメント(`.steering/`)
 
 特定の開発作業における「今回何をするか」を定義:
@@ -109,6 +113,9 @@
 
 # 機能追加(定型フローはコマンド)
 > /add-feature ユーザープロフィール編集
+
+# フィードバック修正(操作結果からの改善)
+> /fix-feedback 2026-02-19-hearing-session.md
 
 # 詳細レビュー(詳細なレポートが必要なとき)
 > /review-docs docs/product-requirements.md
