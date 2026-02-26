@@ -4,7 +4,7 @@ AI駆動のOCIソリューション構築プラットフォーム。Claude等の
 
 ## Deploy to Oracle Cloud
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?region=home&zipUrl=https://orasejapan.objectstorage.ap-osaka-1.oci.customer-oci.com/p/uLzw0bvkEVm1YIRHPCPDj-MC4_fknfEK5qhyaH8gvIHMWc-HqMTj7TUtuHlIw4L1/n/orasejapan/b/tools/o/galley-stack.zip)
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?region=home&zipUrl=https://github.com/sogawa-yk/Galley/releases/latest/download/galley-stack.zip)
 
 > ボタンをクリックするとOCI Console の Resource Manager スタック作成画面が開きます。
 
