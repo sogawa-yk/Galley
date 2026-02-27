@@ -262,6 +262,48 @@ MCPホスト → HTTPS → API Gateway → URLトークン検証 → Container I
 
 `OCIClientFactory` がインスタンス化される際に上記の順序で認証を試行し、最初に成功した方式を使用する。API Key認証の設定方法は `oci setup config` コマンドで事前にOCI CLIの設定を完了させる必要がある。
 
+## アプリケーションビルド基盤
+
+### 設計判断: コンテナイメージのビルド方式
+
+Galley本体はOCI Container Instanceで稼働しており、Docker daemonが利用できない。ユーザーがスキャフォールドしたアプリケーションをコンテナイメージとしてビルドし、OKEにデプロイするために、別途ビルド環境が必要となる。
+
+#### 現行方式: Compute Instance（ビルドサーバー）
+
+Terraform構成にCompute Instanceを含め、Docker環境を提供する。
+
+```
+Galley (Container Instance)
+  ├─ 1. app code を Object Storage にアップロード
+  ├─ 2. Build Instance に OCI CLI 経由でコマンド送信
+  │     └─ docker build → docker tag → docker push to OCIR
+  ├─ 3. kubeconfig 取得 (OCI CLI)
+  └─ 4. kubectl apply (K8sマニフェスト適用)
+```
+
+- **Terraform リソース**: `oci_core_instance`（VM.Standard.E4.Flex, 1 OCPU）
+- **プロビジョニング**: cloud-initでDocker Engine + OCI CLIをインストール
+- **コマンド実行**: OCI Instance Agent `run-command` 経由（SSH不要）
+- **メリット**: Dockerの全機能が利用可能、実装がシンプル
+- **デメリット**: 常時稼働コスト（ただしE4.Flex 1 OCPUは低コスト）
+
+#### 将来候補: Kaniko（Dockerless Build）
+
+Container Instance環境内でDocker daemonなしにイメージビルドを行う方式。
+
+```
+Galley (Container Instance)
+  ├─ 1. Kaniko executor をサブプロセスとして起動
+  │     └─ kaniko --context=dir:///path/to/app --destination=OCIR_URL
+  ├─ 2. kubeconfig 取得
+  └─ 3. kubectl apply
+```
+
+- **追加リソース**: なし（Galleyコンテナイメージにkanikoバイナリを同梱）
+- **メリット**: 追加インスタンス不要、コスト増なし、アーキテクチャがシンプル
+- **デメリット**: kanikoバイナリ同梱によるイメージサイズ増、ビルドキャッシュが効きにくい、デバッグが困難
+- **移行条件**: ビルドサーバーのコスト削減が必要になった場合、またはContainer Instanceのリソース制約が十分な場合に検討
+
 ## 依存関係管理
 
 | ライブラリ | 用途 | バージョン管理方針 |

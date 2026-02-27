@@ -1,5 +1,6 @@
 """アーキテクチャ設計の管理とバリデーションを行うサービス。"""
 
+import ipaddress
 import json
 import re
 import uuid
@@ -212,7 +213,7 @@ resource "oci_functions_function" "{name}" {{
       max = {ingress_port}
     }}
   }}
-}}""",
+{additional_ingress_rules}}}""",
 }
 
 # サービスタイプ → 必要な追加Terraform変数のマッピング
@@ -341,7 +342,7 @@ _TF_DEFAULTS: dict[str, dict[str, str]] = {
     "nat_gateway": {},
     "service_gateway": {},
     "route_table": {"destination": "0.0.0.0/0", "sgw_route_block": ""},
-    "security_list": {"ingress_source": "0.0.0.0/0", "ingress_port": "22"},
+    "security_list": {"ingress_source": "0.0.0.0/0", "ingress_port": "22", "additional_ingress_rules": ""},
 }
 
 
@@ -689,6 +690,26 @@ class DesignService:
             name = "resource"
         return name
 
+    @staticmethod
+    def _derive_subnet_cidrs(vcn_cidr: str) -> tuple[str, str]:
+        """VCN CIDRからPublic/Privateサブネットの CIDRを算出する。
+
+        VCN CIDRの /16 ネットワークから /24 サブネットを2つ算出する。
+        例: 10.100.0.0/16 → ("10.100.1.0/24", "10.100.2.0/24")
+
+        Args:
+            vcn_cidr: VCNのCIDRブロック（例: "10.100.0.0/16"）。
+
+        Returns:
+            (public_subnet_cidr, private_subnet_cidr) のタプル。
+        """
+        network = ipaddress.ip_network(vcn_cidr, strict=False)
+        base = int(network.network_address)
+        # /24 サブネット: base + 1*256 (x.y.1.0/24), base + 2*256 (x.y.2.0/24)
+        public_addr = ipaddress.ip_address(base + 256)
+        private_addr = ipaddress.ip_address(base + 512)
+        return f"{public_addr}/24", f"{private_addr}/24"
+
     def _format_hcl_value(self, value: Any) -> str:
         """Python値をHCL形式の文字列に変換する。"""
         if isinstance(value, bool):
@@ -736,6 +757,7 @@ class DesignService:
             refs["var.subnet_id"] = default_subnet
         if private_subnet_ref:
             refs["_private_subnet_ref"] = private_subnet_ref
+            refs["var.node_subnet_id"] = private_subnet_ref
 
         # Internet Gateway / NAT Gateway / Service Gateway
         for comp in components:
@@ -890,12 +912,52 @@ class DesignService:
             )
 
         if "security_list" not in service_types:
+            vcn_cidr = str(vcn_comp.config.get("cidr_block", "10.0.0.0/16"))
+
+            # OKE存在時はノード通信に必要な追加ルールを注入
+            has_oke = "oke" in service_types
+            if has_oke:
+                # Public/Private共通: VCN内全TCP + ICMP Path MTU Discovery
+                _oke_common_rules = (
+                    f"\n  ingress_security_rules {{\n"
+                    f'    protocol = "6"\n'
+                    f'    source   = "{vcn_cidr}"\n'
+                    f"  }}\n"
+                    f"\n  ingress_security_rules {{\n"
+                    f'    protocol = "1"\n'
+                    f'    source   = "0.0.0.0/0"\n'
+                    f"\n    icmp_options {{\n"
+                    f"      type = 3\n"
+                    f"      code = 4\n"
+                    f"    }}\n"
+                    f"  }}\n"
+                )
+                # Public SLのみ: Kubernetes API Server (port 6443)
+                oke_public_extra_rules = (
+                    _oke_common_rules + "\n  ingress_security_rules {\n"
+                    '    protocol = "6"\n'
+                    '    source   = "0.0.0.0/0"\n'
+                    "\n    tcp_options {\n"
+                    "      min = 6443\n"
+                    "      max = 6443\n"
+                    "    }\n"
+                    "  }\n"
+                )
+                oke_private_extra_rules = _oke_common_rules
+            else:
+                oke_public_extra_rules = ""
+                oke_private_extra_rules = ""
+
             expanded.append(
                 Component(
                     id=str(uuid.uuid4()),
                     service_type="security_list",
                     display_name=f"{vcn_name} Public Security List",
-                    config={"ingress_source": "0.0.0.0/0", "ingress_port": "443"},
+                    config={
+                        "ingress_source": "0.0.0.0/0",
+                        "ingress_port": "443",
+                        "additional_ingress_rules": oke_public_extra_rules,
+                    },
                 )
             )
             expanded.append(
@@ -903,7 +965,11 @@ class DesignService:
                     id=str(uuid.uuid4()),
                     service_type="security_list",
                     display_name=f"{vcn_name} Private Security List",
-                    config={"ingress_source": "10.0.0.0/16", "ingress_port": "8000"},
+                    config={
+                        "ingress_source": vcn_cidr,
+                        "ingress_port": "8000",
+                        "additional_ingress_rules": oke_private_extra_rules,
+                    },
                 )
             )
 
@@ -935,12 +1001,14 @@ class DesignService:
             )
 
         if "subnet" not in service_types:
+            vcn_cidr = vcn_comp.config.get("cidr_block", "10.0.0.0/16")
+            public_cidr, private_cidr = DesignService._derive_subnet_cidrs(str(vcn_cidr))
             expanded.append(
                 Component(
                     id=str(uuid.uuid4()),
                     service_type="subnet",
                     display_name=f"{vcn_name} Public Subnet",
-                    config={"cidr_block": "10.0.1.0/24", "prohibit_public_ip": "false"},
+                    config={"cidr_block": public_cidr, "prohibit_public_ip": "false"},
                 )
             )
             expanded.append(
@@ -948,7 +1016,7 @@ class DesignService:
                     id=str(uuid.uuid4()),
                     service_type="subnet",
                     display_name=f"{vcn_name} Private Subnet",
-                    config={"cidr_block": "10.0.2.0/24", "prohibit_public_ip": "true"},
+                    config={"cidr_block": private_cidr, "prohibit_public_ip": "true"},
                 )
             )
 
@@ -1142,6 +1210,25 @@ class DesignService:
             tfvars_lines.append(f"# {var_def['description']}")
             tfvars_lines.append(f'{var_def["name"]} = "ocid1.example"')
         files["terraform.tfvars.example"] = "\n".join(tfvars_lines)
+
+        # outputs.tf - コンポーネントに応じたoutputブロックを生成
+        output_lines: list[str] = []
+        _safe = self._sanitize_resource_name
+        for comp in expanded_components:
+            if comp.service_type == "vcn":
+                safe_name = _safe(comp.display_name)
+                output_lines.append('output "vcn_id" {')
+                output_lines.append('  description = "VCN OCID"')
+                output_lines.append(f"  value       = oci_core_vcn.{safe_name}.id")
+                output_lines.append("}")
+            elif comp.service_type == "oke":
+                safe_name = _safe(comp.display_name)
+                output_lines.append('output "oke_cluster_id" {')
+                output_lines.append('  description = "OKE Cluster OCID"')
+                output_lines.append(f"  value       = oci_containerengine_cluster.{safe_name}.id")
+                output_lines.append("}")
+        if output_lines:
+            files["outputs.tf"] = "\n".join(output_lines) + "\n"
 
         # セッションのデータディレクトリにファイルを書き出す
         terraform_dir = self._storage.get_session_dir(session_id) / "terraform"

@@ -1336,3 +1336,243 @@ class TestValidationSubnetPlacement:
         results = await design_service.validate_architecture(session_id)
         placement_results = [r for r in results if r.rule_id == "public-resource-private-subnet"]
         assert len(placement_results) > 0
+
+
+class TestSubnetCidrDynamic:
+    """E2E-1: VCN CIDRに基づくサブネットCIDR動的算出テスト。"""
+
+    async def test_custom_vcn_cidr_generates_matching_subnets(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCN CIDR 10.100.0.0/16 でサブネットが 10.100.1.0/24, 10.100.2.0/24 になる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.100.0.0/16"}},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "10.100.1.0/24" in components_tf
+        assert "10.100.2.0/24" in components_tf
+        assert "10.0.1.0/24" not in components_tf
+        assert "10.0.2.0/24" not in components_tf
+
+    async def test_default_vcn_cidr_backward_compatible(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCN CIDR 10.0.0.0/16 で従来通り 10.0.1.0/24, 10.0.2.0/24 になる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "10.0.1.0/24" in components_tf
+        assert "10.0.2.0/24" in components_tf
+
+
+class TestPrivateSlIngressSource:
+    """E2E-3: Private Security Listのingress sourceがVCN CIDRと一致するテスト。"""
+
+    async def test_private_sl_uses_vcn_cidr(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """Private SLのingress sourceがVCN CIDRと一致する。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.100.0.0/16"}},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        blocks = components_tf.split("\nresource ")
+        private_sl_block = next(b for b in blocks if "private_security_list" in b)
+        assert "10.100.0.0/16" in private_sl_block
+        assert "10.0.0.0/16" not in private_sl_block
+
+
+class TestOkeSecurityListRules:
+    """E2E-2: OKE用Security Listルールテスト。"""
+
+    async def test_oke_adds_additional_security_rules(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKE構成でSLにVCN内全TCP + ICMP Type 3 Code 4ルールが含まれる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.100.0.0/16"}},
+                {"service_type": "oke", "display_name": "OKE"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        # ICMP Type 3 Code 4 ルールが含まれる
+        assert "icmp_options" in components_tf
+        assert "type = 3" in components_tf
+        assert "code = 4" in components_tf
+        # VCN内全TCPルール（VCN CIDRからのprotocol 6）
+        blocks = components_tf.split("\nresource ")
+        public_sl_block = next(b for b in blocks if "public_security_list" in b)
+        assert "10.100.0.0/16" in public_sl_block
+
+    async def test_no_oke_no_additional_security_rules(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKEなし構成でSLに追加ルールが含まれない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        assert "icmp_options" not in components_tf
+
+    async def test_oke_public_sl_has_port_6443(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKE構成でPublic SLにKubernetes API Server (port 6443) ルールが含まれる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "oke", "display_name": "OKE"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        blocks = components_tf.split("\nresource ")
+        public_sl_block = next(b for b in blocks if "public_security_list" in b)
+        assert "min = 6443" in public_sl_block
+        assert "max = 6443" in public_sl_block
+
+    async def test_oke_private_sl_no_port_6443(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKE構成でPrivate SLにはport 6443ルールが含まれない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "oke", "display_name": "OKE"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        components_tf = result["terraform_files"]["components.tf"]
+        blocks = components_tf.split("\nresource ")
+        private_sl_block = next(b for b in blocks if "private_security_list" in b)
+        assert "6443" not in private_sl_block
+
+
+class TestNodeSubnetIdVariable:
+    """E2E-4: node_subnet_id変数の除去テスト。"""
+
+    async def test_vcn_with_oke_no_node_subnet_id_variable(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCN+OKE構成で node_subnet_id が variables.tf に含まれない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "oke", "display_name": "OKE"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "node_subnet_id"' not in variables_tf
+
+    async def test_oke_without_vcn_has_node_subnet_id_variable(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCNなしOKE構成で node_subnet_id が variables.tf に含まれる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "oke", "display_name": "OKE"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        variables_tf = result["terraform_files"]["variables.tf"]
+        assert 'variable "node_subnet_id"' in variables_tf
+
+
+class TestOutputsTf:
+    """E2E-5: outputs.tf自動生成テスト。"""
+
+    async def test_oke_generates_cluster_id_output(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """OKE構成で outputs.tf に oke_cluster_id が含まれる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "oke", "display_name": "OKE"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        assert "outputs.tf" in result["terraform_files"]
+        outputs_tf = result["terraform_files"]["outputs.tf"]
+        assert 'output "oke_cluster_id"' in outputs_tf
+        assert "oci_containerengine_cluster.oke.id" in outputs_tf
+
+    async def test_vcn_generates_vcn_id_output(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCN構成で outputs.tf に vcn_id が含まれる。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[
+                {"service_type": "vcn", "display_name": "VCN", "config": {"cidr_block": "10.0.0.0/16"}},
+                {"service_type": "compute", "display_name": "Server"},
+            ],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        assert "outputs.tf" in result["terraform_files"]
+        outputs_tf = result["terraform_files"]["outputs.tf"]
+        assert 'output "vcn_id"' in outputs_tf
+        assert "oci_core_vcn.vcn.id" in outputs_tf
+
+    async def test_no_outputs_without_vcn_or_oke(
+        self, hearing_service: HearingService, design_service: DesignService
+    ) -> None:
+        """VCN/OKEなしの構成で outputs.tf が生成されない。"""
+        session_id = await _create_completed_session(hearing_service)
+        await design_service.save_architecture(
+            session_id,
+            components=[{"service_type": "adb", "display_name": "ADB"}],
+            connections=[],
+        )
+        result = await design_service.export_iac(session_id)
+        assert "outputs.tf" not in result["terraform_files"]

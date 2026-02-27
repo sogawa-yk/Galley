@@ -157,7 +157,7 @@ class TestUpdateAppCodeViaMCP:
 
 
 class TestBuildAndDeployViaMCP:
-    async def test_build_and_deploy_returns_stub(self, mcp_server: object) -> None:
+    async def test_build_and_deploy_generates_manifests_and_attempts_deploy(self, mcp_server: object) -> None:
         async with Client(mcp_server) as client:  # type: ignore[arg-type]
             session_id = await _create_session_with_architecture_via_mcp(client)
 
@@ -168,11 +168,16 @@ class TestBuildAndDeployViaMCP:
 
             result = await client.call_tool(
                 "build_and_deploy",
-                {"session_id": session_id},
+                {
+                    "session_id": session_id,
+                    "cluster_id": "ocid1.cluster.oc1..test",
+                    "image_uri": "ghcr.io/test/app:latest",
+                },
             )
             data = parse_tool_result(result)
+            # kubeconfig取得が失敗するが、マニフェストは生成される
             assert data["success"] is False
-            assert "not yet implemented" in data["reason"]
+            assert data["k8s_manifests_dir"] is not None
 
 
 class TestCheckAppStatusViaMCP:

@@ -26,14 +26,18 @@ resource "oci_container_instances_container_instance" "galley" {
     image_url    = var.galley_image_url
 
     environment_variables = {
-      "GALLEY_HOST"             = "0.0.0.0"
-      "GALLEY_PORT"             = "8000"
-      "GALLEY_DATA_DIR"         = "/data"
-      "GALLEY_CONFIG_DIR"       = "/app/config"
-      "GALLEY_BUCKET_NAME"      = oci_objectstorage_bucket.galley.name
-      "GALLEY_BUCKET_NAMESPACE" = data.oci_objectstorage_namespace.current.namespace
-      "GALLEY_REGION"           = var.region
-      "GALLEY_URL_TOKEN"        = random_password.url_token.result
+      "GALLEY_HOST"              = "0.0.0.0"
+      "GALLEY_PORT"              = "8000"
+      "GALLEY_DATA_DIR"          = "/data"
+      "GALLEY_CONFIG_DIR"        = "/app/config"
+      "GALLEY_BUCKET_NAME"       = oci_objectstorage_bucket.galley.name
+      "GALLEY_BUCKET_NAMESPACE"  = data.oci_objectstorage_namespace.current.namespace
+      "GALLEY_REGION"            = var.region
+      "GALLEY_URL_TOKEN"         = random_password.url_token.result
+      "GALLEY_BUILD_INSTANCE_ID" = oci_core_instance.build.id
+      "GALLEY_OCIR_ENDPOINT"     = "${var.region}.ocir.io"
+      "GALLEY_OCIR_USERNAME"     = var.ocir_username
+      "GALLEY_OCIR_AUTH_TOKEN"   = var.ocir_auth_token
     }
 
     health_checks {

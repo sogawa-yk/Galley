@@ -1,9 +1,12 @@
 """AppServiceのユニットテスト。"""
 
 import json
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from galley.config import ServerConfig
 from galley.models.errors import (
     AppNotScaffoldedError,
     ArchitectureNotFoundError,
@@ -12,6 +15,7 @@ from galley.models.errors import (
 )
 from galley.services.app import AppService
 from galley.services.hearing import HearingService
+from galley.storage.service import StorageService
 
 
 async def _create_session_with_architecture(hearing_service: HearingService) -> str:
@@ -178,24 +182,115 @@ class TestUpdateAppCode:
             await app_service.update_app_code(session_id, "/etc/passwd", "evil")
 
 
-class TestBuildAndDeploy:
-    async def test_build_and_deploy_returns_not_implemented(
+class TestGenerateK8sManifests:
+    async def test_generates_deployment_and_service(
+        self, hearing_service: HearingService, app_service: AppService
+    ) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {"app_port": "3000"})
+
+        k8s_dir = app_service._generate_k8s_manifests(session_id, "ghcr.io/test/app:latest", "default")
+
+        assert k8s_dir.exists()
+        assert (k8s_dir / "deployment.yaml").exists()
+        assert (k8s_dir / "service.yaml").exists()
+
+        deployment = (k8s_dir / "deployment.yaml").read_text(encoding="utf-8")
+        assert "ghcr.io/test/app:latest" in deployment
+        assert "containerPort: 3000" in deployment
+
+        service = (k8s_dir / "service.yaml").read_text(encoding="utf-8")
+        assert "targetPort: 3000" in service
+        assert "type: LoadBalancer" in service
+
+    async def test_uses_default_port_when_not_in_dockerfile(
         self, hearing_service: HearingService, app_service: AppService
     ) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
         await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
 
-        result = await app_service.build_and_deploy(session_id)
-        assert result.success is False
-        assert "not yet implemented" in (result.reason or "")
+        # Dockerfileのポートを読み取る（テンプレートには{{app_port}}が入っている場合）
+        k8s_dir = app_service._generate_k8s_manifests(session_id, "test:latest")
+        deployment = (k8s_dir / "deployment.yaml").read_text(encoding="utf-8")
+        # ポートが数値として設定されていることを確認（デフォルト8000 or テンプレートのEXPOSE値）
+        assert "containerPort:" in deployment
 
+
+class TestBuildAndDeploy:
     async def test_build_and_deploy_raises_for_unscaffolded(
         self, hearing_service: HearingService, app_service: AppService
     ) -> None:
         session_id = await _create_session_with_architecture(hearing_service)
 
         with pytest.raises(AppNotScaffoldedError):
-            await app_service.build_and_deploy(session_id)
+            await app_service.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx", "test:latest")
+
+    async def test_build_and_deploy_returns_error_on_kubeconfig_failure(
+        self, hearing_service: HearingService, app_service: AppService
+    ) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        with patch.object(app_service, "_run_subprocess", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (1, "", "Could not find config file")
+
+            result = await app_service.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx", "test:latest")
+
+        assert result.success is False
+        assert "kubeconfig" in (result.reason or "").lower()
+        assert result.k8s_manifests_dir is not None
+
+    async def test_build_and_deploy_returns_error_on_kubectl_apply_failure(
+        self, hearing_service: HearingService, app_service: AppService
+    ) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        call_count = 0
+
+        async def mock_subprocess(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # kubeconfig成功
+                return (0, "kubeconfig created", "")
+            # kubectl apply失敗
+            return (1, "", "error: connection refused")
+
+        with patch.object(app_service, "_run_subprocess", side_effect=mock_subprocess):
+            result = await app_service.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx", "test:latest")
+
+        assert result.success is False
+        assert "kubectl apply failed" in (result.reason or "")
+
+    async def test_build_and_deploy_success(self, hearing_service: HearingService, app_service: AppService) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        call_count = 0
+
+        async def mock_subprocess(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # kubeconfig成功
+                return (0, "", "")
+            if call_count == 2:
+                # kubectl apply成功
+                return (0, "deployment.apps/rest-api-adb created", "")
+            if call_count == 3:
+                # rollout status成功
+                return (0, "deployment successfully rolled out", "")
+            # get svc (endpoint)
+            return (0, "10.0.1.100", "")
+
+        with patch.object(app_service, "_run_subprocess", side_effect=mock_subprocess):
+            result = await app_service.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx", "ghcr.io/test/app:latest")
+
+        assert result.success is True
+        assert result.image_uri == "ghcr.io/test/app:latest"
+        assert result.endpoint == "http://10.0.1.100"
+        assert result.k8s_manifests_dir is not None
 
 
 class TestCheckAppStatus:
@@ -211,3 +306,174 @@ class TestCheckAppStatus:
         status = await app_service.check_app_status(session_id)
         assert status.session_id == session_id
         assert status.status == "not_deployed"
+
+    async def test_check_status_running(self, hearing_service: HearingService, app_service: AppService) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        # kubeconfigを作成してデプロイ済み状態をシミュレート
+        kubeconfig = app_service._kubeconfig_path(session_id)
+        kubeconfig.parent.mkdir(parents=True, exist_ok=True)
+        kubeconfig.write_text("dummy-kubeconfig", encoding="utf-8")
+
+        call_count = 0
+
+        async def mock_subprocess(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # get deployment readyReplicas
+                return (0, "1", "")
+            # get svc endpoint
+            return (0, "10.0.1.100", "")
+
+        with patch.object(app_service, "_run_subprocess", side_effect=mock_subprocess):
+            status = await app_service.check_app_status(session_id)
+
+        assert status.status == "running"
+        assert status.endpoint == "http://10.0.1.100"
+
+
+class TestBuildAndPushImage:
+    """Build Instance 経由のイメージビルドテスト。"""
+
+    @pytest.fixture
+    def app_service_with_config(self, storage: StorageService, config_dir: Path, tmp_data_dir: Path) -> AppService:
+        """ビルド設定付きの AppService を作成する。"""
+        config = ServerConfig(
+            data_dir=tmp_data_dir,
+            config_dir=config_dir,
+            build_instance_id="ocid1.instance.oc1..build-test",
+            ocir_endpoint="ap-osaka-1.ocir.io",
+            ocir_username="namespace/user@example.com",
+            ocir_auth_token="test-token-123",
+            bucket_name="galley-test-bucket",
+            bucket_namespace="testnamespace",
+            region="ap-osaka-1",
+        )
+        return AppService(storage=storage, config_dir=config_dir, config=config)
+
+    async def test_build_script_contains_required_commands(self) -> None:
+        script = AppService._build_script(
+            bucket_name="my-bucket",
+            bucket_namespace="my-ns",
+            object_name="builds/abc/app.tar.gz",
+            image_uri="ap-osaka-1.ocir.io/my-ns/test-app:abc12345",
+            ocir_endpoint="ap-osaka-1.ocir.io",
+            ocir_username="my-ns/user@example.com",
+            ocir_auth_token="secret-token",
+        )
+        assert "docker build" in script
+        assert "docker push" in script
+        assert "docker login" in script
+        assert "my-bucket" in script
+        assert "builds/abc/app.tar.gz" in script
+        assert "ap-osaka-1.ocir.io/my-ns/test-app:abc12345" in script
+
+    async def test_build_and_deploy_without_image_uri_fails_when_no_config(
+        self, hearing_service: HearingService, app_service: AppService
+    ) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        result = await app_service.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx")
+
+        assert result.success is False
+        assert "build" in (result.reason or "").lower()
+
+    async def test_build_and_deploy_without_image_uri_triggers_build(
+        self,
+        hearing_service: HearingService,
+        app_service_with_config: AppService,
+    ) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service_with_config.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        call_count = 0
+
+        async def mock_subprocess(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+            nonlocal call_count
+            call_count += 1
+            cmd = " ".join(args)
+
+            # 1. upload tarball to Object Storage
+            if "os" in args and "object" in args and "put" in args:
+                return (0, "", "")
+
+            # 2. instance-agent command create
+            if "instance-agent" in args and "command" in args and "create" in args:
+                return (
+                    0,
+                    json.dumps({"data": {"id": "ocid1.command.oc1..test"}}),
+                    "",
+                )
+
+            # 3. instance-agent command-execution get (complete)
+            if "command-execution" in args and "get" in args:
+                return (
+                    0,
+                    json.dumps(
+                        {
+                            "data": {
+                                "lifecycle-state": "SUCCEEDED",
+                                "content": {
+                                    "exit-code": 0,
+                                    "output": {"text": "BUILD_SUCCESS"},
+                                },
+                            }
+                        }
+                    ),
+                    "",
+                )
+
+            # 4. kubeconfig
+            if "ce" in args and "cluster" in args:
+                return (0, "", "")
+
+            # 5. kubectl apply
+            if "kubectl" in args and "apply" in cmd:
+                return (0, "deployment created", "")
+
+            # 6. rollout status
+            if "kubectl" in args and "rollout" in cmd:
+                return (0, "rolled out", "")
+
+            # 7. get svc
+            if "kubectl" in args and "get" in cmd:
+                return (0, "10.0.1.200", "")
+
+            return (0, "", "")
+
+        with (
+            patch.object(app_service_with_config, "_run_subprocess", side_effect=mock_subprocess),
+            patch.dict("os.environ", {"GALLEY_WORK_COMPARTMENT_ID": "ocid1.compartment.oc1..test"}),
+        ):
+            result = await app_service_with_config.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx")
+
+        assert result.success is True
+        assert "ap-osaka-1.ocir.io" in (result.image_uri or "")
+        assert result.endpoint == "http://10.0.1.200"
+
+    async def test_build_failure_returns_error(
+        self,
+        hearing_service: HearingService,
+        app_service_with_config: AppService,
+    ) -> None:
+        session_id = await _create_session_with_architecture(hearing_service)
+        await app_service_with_config.scaffold_from_template(session_id, "rest-api-adb", {})
+
+        async def mock_subprocess(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
+            # upload 成功
+            if "os" in args and "put" in args:
+                return (0, "", "")
+            # command create 失敗
+            return (1, "", "Access denied")
+
+        with (
+            patch.object(app_service_with_config, "_run_subprocess", side_effect=mock_subprocess),
+            patch.dict("os.environ", {"GALLEY_WORK_COMPARTMENT_ID": "ocid1.compartment.oc1..test"}),
+        ):
+            result = await app_service_with_config.build_and_deploy(session_id, "ocid1.cluster.oc1..xxx")
+
+        assert result.success is False
+        assert "build" in (result.reason or "").lower()

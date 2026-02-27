@@ -37,3 +37,8 @@ output "vcn_id" {
   description = "VCNのOCID"
   value       = oci_core_vcn.galley.id
 }
+
+output "build_instance_id" {
+  description = "Build InstanceのOCID"
+  value       = oci_core_instance.build.id
+}

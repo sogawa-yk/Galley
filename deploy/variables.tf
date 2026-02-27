@@ -58,3 +58,42 @@ variable "container_instance_memory_in_gbs" {
   type        = number
   default     = 2
 }
+
+# ============================================================
+# Build Instance
+# ============================================================
+
+variable "build_instance_shape" {
+  description = "Build Instanceのシェイプ"
+  type        = string
+  default     = "VM.Standard.E4.Flex"
+}
+
+variable "build_instance_ocpus" {
+  description = "Build Instanceに割り当てるOCPU数"
+  type        = number
+  default     = 1
+}
+
+variable "build_instance_memory_in_gbs" {
+  description = "Build Instanceに割り当てるメモリ（GB）"
+  type        = number
+  default     = 8
+}
+
+# ============================================================
+# OCIR (Container Registry) 認証
+# ============================================================
+
+variable "ocir_username" {
+  description = "OCIR認証ユーザー名（例: namespace/oracleidentitycloudservice/user@example.com）"
+  type        = string
+  default     = ""
+}
+
+variable "ocir_auth_token" {
+  description = "OCIR認証トークン（OCI Console → User Settings → Auth Tokens で生成）"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

@@ -35,6 +35,7 @@ class DeployResult(BaseModel):
     endpoint: str | None = None
     rolled_back: bool = False
     reason: str | None = None
+    k8s_manifests_dir: str | None = None
 
 
 class AppStatus(BaseModel):

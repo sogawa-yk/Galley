@@ -70,19 +70,31 @@ def register_app_tools(mcp: FastMCP, app_service: AppService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
-    async def build_and_deploy(session_id: str) -> dict[str, Any]:
+    async def build_and_deploy(
+        session_id: str,
+        cluster_id: str,
+        image_uri: str | None = None,
+        namespace: str = "default",
+    ) -> dict[str, Any]:
         """ビルド・デプロイを一括実行する。
 
-        アプリケーションのビルド→OCIR push→OKEデプロイを一括で実行します。
-        現在は未実装です。
+        スキャフォールドされたアプリケーションをOKEクラスタにデプロイします。
+        K8sマニフェスト（Deployment + Service）を自動生成し、
+        kubectl applyでデプロイを実行します。
+
+        image_uriを省略した場合、Build Instanceでイメージをビルドし
+        OCIRにプッシュしてからデプロイします。
 
         Args:
             session_id: セッションID。
+            cluster_id: OKEクラスタのOCID。
+            image_uri: コンテナイメージURI（省略時はBuild Instanceでビルド）。
+            namespace: K8s名前空間（デフォルト: default）。
         """
         try:
-            result = await app_service.build_and_deploy(session_id)
+            result = await app_service.build_and_deploy(session_id, cluster_id, image_uri, namespace)
             return result.model_dump()
-        except (GalleyError, ValueError) as e:
+        except (GalleyError, ValueError, RuntimeError) as e:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()

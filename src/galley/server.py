@@ -42,7 +42,7 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     hearing_service = HearingService(storage=storage, config_dir=config.config_dir)
     design_service = DesignService(storage=storage, config_dir=config.config_dir)
     infra_service = InfraService(storage=storage, config_dir=config.config_dir)
-    app_service = AppService(storage=storage, config_dir=config.config_dir)
+    app_service = AppService(storage=storage, config_dir=config.config_dir, config=config)
 
     # MCPインターフェース登録 — ヒアリング層
     register_hearing_tools(mcp, hearing_service, config_dir=config.config_dir)

@@ -18,3 +18,16 @@ class ServerConfig(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     url_token: str = ""
+
+    # Object Storage (Terraform自動設定)
+    bucket_name: str = ""
+    bucket_namespace: str = ""
+    region: str = ""
+
+    # Build Instance (Terraform自動設定)
+    build_instance_id: str = ""
+
+    # OCIR認証 (Terraform自動設定)
+    ocir_endpoint: str = ""
+    ocir_username: str = ""
+    ocir_auth_token: str = ""
