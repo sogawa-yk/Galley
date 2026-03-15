@@ -6,12 +6,14 @@ from fastmcp import FastMCP
 
 from galley.models.errors import GalleyError
 from galley.services.app import AppService
+from galley.tools import log_tool_call
 
 
 def register_app_tools(mcp: FastMCP, app_service: AppService) -> None:
     """アプリケーション関連のMCPツールを登録する。"""
 
     @mcp.tool()
+    @log_tool_call
     async def list_templates() -> dict[str, Any]:
         """利用可能なテンプレート一覧を取得する。
 
@@ -25,6 +27,7 @@ def register_app_tools(mcp: FastMCP, app_service: AppService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def scaffold_from_template(
         session_id: str,
         template_name: str,
@@ -47,6 +50,7 @@ def register_app_tools(mcp: FastMCP, app_service: AppService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def update_app_code(
         session_id: str,
         file_path: str,
@@ -70,6 +74,7 @@ def register_app_tools(mcp: FastMCP, app_service: AppService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def build_and_deploy(
         session_id: str,
         cluster_id: str,
@@ -98,6 +103,7 @@ def register_app_tools(mcp: FastMCP, app_service: AppService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def check_app_status(session_id: str) -> dict[str, Any]:
         """アプリケーションのデプロイ状態を確認する。
 

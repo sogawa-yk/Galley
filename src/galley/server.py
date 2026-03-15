@@ -1,10 +1,30 @@
 """FastMCPベースのMCPサーバーエントリポイント。"""
 
+import logging
+
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from galley.config import ServerConfig
+
+logger = logging.getLogger("galley")
+
+
+def _setup_logging() -> None:
+    """Galleyアプリケーションのロギングを初期化する。"""
+    root_logger = logging.getLogger("galley")
+    if root_logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
 from galley.prompts.infra import register_infra_prompts
 from galley.prompts.workflow import register_workflow_prompts
 from galley.resources.design import register_design_resources
@@ -32,6 +52,9 @@ def create_server(config: ServerConfig | None = None) -> FastMCP:
     """
     if config is None:
         config = ServerConfig()
+
+    _setup_logging()
+    logger.info("Initializing Galley MCP server")
 
     mcp = FastMCP("galley")
 

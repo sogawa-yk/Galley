@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import json
+import logging
 import os
 import shutil
 import tarfile
@@ -12,6 +13,8 @@ import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+
+logger = logging.getLogger("galley.services.app")
 
 from galley.models.app import AppStatus, DeployResult, TemplateMetadata
 from galley.models.errors import (
@@ -156,6 +159,7 @@ class AppService:
             raise TemplateNotFoundError(template_name)
 
         # プロジェクトディレクトリにコピー
+        logger.info("Scaffolding template '%s' for session %s", template_name, session_id[:8])
         app_dir = self._app_dir(session_id)
         if app_dir.exists():
             shutil.rmtree(app_dir)
@@ -164,6 +168,11 @@ class AppService:
         # テンプレートメタデータをセッションディレクトリに保存（protected_paths参照用）
         metadata_save_path = app_dir.parent / "template-metadata.json"
         metadata_save_path.write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
+
+        # app_nameをセッションディレクトリに保存（K8sリソース名で使用）
+        app_name = str(params.get("app_name", f"galley-app-{session_id[:8]}"))
+        app_name_path = app_dir.parent / "app-name.txt"
+        app_name_path.write_text(app_name, encoding="utf-8")
 
         # パラメータの置換（テンプレートファイル内の {{param_name}} を置換）
         for file_path in app_dir.rglob("*"):
@@ -307,14 +316,13 @@ class AppService:
         )
 
     def _get_app_name(self, session_id: str) -> str:
-        """セッションのアプリ名を取得する（テンプレートメタデータまたはセッションIDから）。"""
-        metadata_file = self._app_dir(session_id).parent / "template-metadata.json"
-        if metadata_file.exists():
-            try:
-                data = json.loads(metadata_file.read_text(encoding="utf-8"))
-                return str(data.get("name", f"galley-app-{session_id[:8]}"))
-            except (json.JSONDecodeError, ValueError):
-                pass
+        """セッションのアプリ名を取得する（scaffold時に保存されたapp_nameを優先）。"""
+        # scaffold時に保存されたapp_nameを優先
+        app_name_file = self._app_dir(session_id).parent / "app-name.txt"
+        if app_name_file.exists():
+            name = app_name_file.read_text(encoding="utf-8").strip()
+            if name:
+                return name
         return f"galley-app-{session_id[:8]}"
 
     def _get_app_port(self, session_id: str) -> int:
@@ -718,6 +726,7 @@ echo "BUILD_SUCCESS"
             raise AppNotScaffoldedError(session_id)
 
         app_name = self._get_app_name(session_id)
+        logger.info("Starting build_and_deploy: app=%s, session=%s", app_name, session_id[:8])
 
         # 0. image_uri が未指定の場合、Build Instance でビルド
         if not image_uri:
@@ -795,7 +804,9 @@ echo "BUILD_SUCCESS"
             ]
         )
         if exit_code == 0 and stdout.strip():
-            endpoint = f"http://{stdout.strip()}"
+            ip = stdout.strip()
+            if ip and ip != "<pending>":
+                endpoint = f"http://{ip}"
 
         return DeployResult(
             success=True,
@@ -867,7 +878,9 @@ echo "BUILD_SUCCESS"
             ]
         )
         if exit_code == 0 and stdout.strip():
-            endpoint = f"http://{stdout.strip()}"
+            ip = stdout.strip()
+            if ip and ip != "<pending>":
+                endpoint = f"http://{ip}"
 
         return AppStatus(
             session_id=session_id,

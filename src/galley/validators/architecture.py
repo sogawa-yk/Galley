@@ -62,6 +62,7 @@ class ArchitectureValidator:
         # コンポーネント単体のバリデーション（コードベースのルール）
         results.extend(self._check_naming_rules(architecture))
         results.extend(self._check_subnet_placement(architecture))
+        results.extend(self._check_adb_availability(architecture))
 
         return results
 
@@ -207,3 +208,64 @@ class ArchitectureValidator:
                 )
 
         return results
+
+    @staticmethod
+    def _check_adb_availability(architecture: Architecture) -> list[ValidationResult]:
+        """ADBコンポーネントが存在する場合、テナンシーでADBが利用可能かチェックする。
+
+        ADB未有効テナンシーではTerraform applyが20分待って409エラーになるため、
+        事前にOCI CLIで利用可否を確認しwarningを返す。
+        """
+        import logging
+        import os
+        import subprocess
+
+        adb_components = [c for c in architecture.components if c.service_type == "adb"]
+        if not adb_components:
+            return []
+
+        logger = logging.getLogger("galley.validators")
+
+        try:
+            compartment_id = os.environ.get("GALLEY_WORK_COMPARTMENT_ID", "")
+            if not compartment_id:
+                return []
+
+            auth_args = ["--auth", "resource_principal"] if os.environ.get("OCI_RESOURCE_PRINCIPAL_VERSION") else []
+            cmd = [
+                "oci", *auth_args,
+                "db", "autonomous-database", "list",
+                "--compartment-id", compartment_id,
+                "--limit", "1",
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                stderr_text = result.stderr
+                if "NotAuthorizedOrNotFound" in stderr_text or "409" in stderr_text:
+                    return [
+                        ValidationResult(
+                            severity="warning",
+                            rule_id="adb-availability",
+                            message=(
+                                "Autonomous Databaseがこのテナンシー/コンパートメントで"
+                                "利用できない可能性があります。"
+                            ),
+                            affected_components=[c.id for c in adb_components],
+                            recommendation=(
+                                "ADBを使用するには、テナンシーでAutonomous Databaseサービスが"
+                                "有効化されている必要があります。OCI Consoleで確認してください。"
+                                "無効な場合、Terraform applyが長時間後にエラーとなります。"
+                            ),
+                        )
+                    ]
+        except Exception:
+            logger.debug("ADB availability check skipped (CLI unavailable)")
+
+        return []

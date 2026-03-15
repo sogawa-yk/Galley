@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger("galley.services.design")
 
 from galley.models.architecture import Architecture, Component, Connection
 from galley.models.errors import (

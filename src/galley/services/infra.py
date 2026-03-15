@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import io
+import logging
 import os
 import re
 import shlex
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 import oci
+
+logger = logging.getLogger("galley.services.infra")
 
 from galley.models.errors import (
     ArchitectureNotFoundError,
@@ -64,6 +67,7 @@ ALLOWED_OCI_SERVICES: frozenset[str] = frozenset(
         "bv",
         "os",
         "db",
+        "ce",
         "container-instances",
         "resource-manager",
         "dns",
@@ -164,6 +168,7 @@ class InfraService:
             try:
                 result["tenancy_ocid"] = self._get_tenancy_ocid()
             except Exception:
+                logger.warning("Failed to get tenancy OCID, using empty string", exc_info=True)
                 result["tenancy_ocid"] = ""
         return result
 
@@ -294,6 +299,7 @@ class InfraService:
             logs_response = await asyncio.to_thread(client.get_job_logs_content, job_id)
             stdout = logs_response.data.text if hasattr(logs_response.data, "text") else str(logs_response.data)
         except Exception:
+            logger.exception("Failed to retrieve job logs for %s", job_id)
             stdout = f"(Failed to retrieve job logs for {job_id})"
 
         # タイムアウトチェック
@@ -304,6 +310,7 @@ class InfraService:
                 stdout=stdout,
                 stderr=f"Job timed out after {timeout}s. Job ID: {job_id}",
                 exit_code=1,
+                job_id=job_id,
             )
 
         success = lifecycle_state == "SUCCEEDED"
@@ -318,6 +325,7 @@ class InfraService:
             exit_code=0 if success else 1,
             plan_summary=plan_summary,
             errors=errors,
+            job_id=job_id,
         )
 
     async def _run_subprocess(self, args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
@@ -410,6 +418,7 @@ class InfraService:
                 stack_id = await self._ensure_rm_stack(session_id, validated_dir, variables)
                 return await self._run_rm_job(stack_id, "PLAN", "plan")
             except Exception as e:
+                logger.exception("Terraform plan failed for session %s", session_id)
                 return TerraformResult(
                     success=False,
                     command="plan",
@@ -457,6 +466,7 @@ class InfraService:
                 stack_id = await self._ensure_rm_stack(session_id, validated_dir, variables)
                 return await self._run_rm_job(stack_id, "APPLY", "apply")
             except Exception as e:
+                logger.exception("Terraform apply failed for session %s", session_id)
                 return TerraformResult(
                     success=False,
                     command="apply",
@@ -503,6 +513,7 @@ class InfraService:
                 stack_id = await self._ensure_rm_stack(session_id, validated_dir, variables)
                 return await self._run_rm_job(stack_id, "DESTROY", "destroy")
             except Exception as e:
+                logger.exception("Terraform destroy failed for session %s", session_id)
                 return TerraformResult(
                     success=False,
                     command="destroy",
@@ -531,6 +542,7 @@ class InfraService:
                 logs_response = await asyncio.to_thread(client.get_job_logs_content, job_id)
                 log_text = logs_response.data.text if hasattr(logs_response.data, "text") else str(logs_response.data)
             except Exception:
+                logger.exception("Failed to retrieve logs for job %s", job_id)
                 log_text = "(Failed to retrieve logs)"
 
             job = RMJob(
@@ -544,6 +556,7 @@ class InfraService:
                 "logs": log_text,
             }
         except Exception as e:
+            logger.exception("Failed to get RM job status for %s", job_id)
             return {"error": type(e).__name__, "message": str(e)}
 
     def _validate_oci_command(self, command: str) -> list[str]:

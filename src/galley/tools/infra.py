@@ -6,12 +6,14 @@ from fastmcp import FastMCP
 
 from galley.models.errors import GalleyError
 from galley.services.infra import InfraService
+from galley.tools import log_tool_call
 
 
 def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
     """インフラ関連のMCPツールを登録する。"""
 
     @mcp.tool()
+    @log_tool_call
     async def run_terraform_plan(
         session_id: str,
         terraform_dir: str,
@@ -35,6 +37,7 @@ def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def run_terraform_apply(
         session_id: str,
         terraform_dir: str,
@@ -57,6 +60,7 @@ def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def run_terraform_destroy(
         session_id: str,
         terraform_dir: str,
@@ -79,6 +83,7 @@ def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def update_terraform_file(
         session_id: str,
         file_path: str,
@@ -102,6 +107,7 @@ def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def run_oci_cli(command: str) -> dict[str, Any]:
         """OCI CLIコマンドを実行する。
 
@@ -122,6 +128,7 @@ def register_infra_tools(mcp: FastMCP, infra_service: InfraService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def get_rm_job_status(job_id: str) -> dict[str, Any]:
         """Resource Managerジョブの状態とログを取得する。
 

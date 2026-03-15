@@ -8,12 +8,14 @@ from fastmcp import FastMCP
 
 from galley.models.errors import GalleyError
 from galley.services.hearing import HearingService
+from galley.tools import log_tool_call
 
 
 def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, config_dir: Path | None = None) -> None:
     """ヒアリング関連のMCPツールを登録する。"""
 
     @mcp.tool()
+    @log_tool_call
     async def get_hearing_questions() -> dict[str, Any]:
         """ヒアリング質問定義を取得する。
 
@@ -28,6 +30,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return data
 
     @mcp.tool()
+    @log_tool_call
     async def get_hearing_flow() -> dict[str, Any]:
         """ヒアリングフロー定義を取得する。
 
@@ -42,6 +45,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return data
 
     @mcp.tool()
+    @log_tool_call
     async def create_session() -> dict[str, Any]:
         """新しいヒアリングセッションを作成する。
 
@@ -55,6 +59,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def save_answer(
         session_id: str,
         question_id: str,
@@ -78,6 +83,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def save_answers_batch(
         session_id: str,
         answers: list[dict[str, Any]],
@@ -105,6 +111,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def complete_hearing(session_id: str) -> dict[str, Any]:
         """ヒアリングを完了し、構造化された結果を生成する。
 
@@ -128,6 +135,7 @@ def register_hearing_tools(mcp: FastMCP, hearing_service: HearingService, *, con
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def get_hearing_result(session_id: str) -> dict[str, Any]:
         """ヒアリング結果を取得する。
 

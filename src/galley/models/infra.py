@@ -27,6 +27,7 @@ class TerraformResult(BaseModel):
     exit_code: int
     plan_summary: str | None = None
     errors: list[TerraformErrorDetail] | None = None
+    job_id: str | None = None
 
 
 class CLIResult(BaseModel):

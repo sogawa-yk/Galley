@@ -1,11 +1,14 @@
 """ヒアリングセッションの管理とフロー制御を行うサービス。"""
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger("galley.services.hearing")
 
 from galley.models.errors import (
     HearingAlreadyCompletedError,

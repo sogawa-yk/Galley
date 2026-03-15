@@ -6,12 +6,14 @@ from fastmcp import FastMCP
 
 from galley.models.errors import GalleyError
 from galley.services.design import DesignService
+from galley.tools import log_tool_call
 
 
 def register_design_tools(mcp: FastMCP, design_service: DesignService) -> None:
     """設計関連のMCPツールを登録する。"""
 
     @mcp.tool()
+    @log_tool_call
     async def save_architecture(
         session_id: str,
         components: list[dict[str, Any]],
@@ -41,6 +43,7 @@ def register_design_tools(mcp: FastMCP, design_service: DesignService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def add_component(
         session_id: str,
         service_type: str,
@@ -65,6 +68,7 @@ def register_design_tools(mcp: FastMCP, design_service: DesignService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def remove_component(
         session_id: str,
         component_id: str,
@@ -84,6 +88,7 @@ def register_design_tools(mcp: FastMCP, design_service: DesignService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def configure_component(
         session_id: str,
         component_id: str,
@@ -105,6 +110,7 @@ def register_design_tools(mcp: FastMCP, design_service: DesignService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def validate_architecture(session_id: str) -> dict[str, Any]:
         """アーキテクチャ構成をバリデーションルールに基づいて検証する。
 
@@ -127,6 +133,7 @@ def register_design_tools(mcp: FastMCP, design_service: DesignService) -> None:
             return {"error": type(e).__name__, "message": str(e)}
 
     @mcp.tool()
+    @log_tool_call
     async def list_available_services() -> dict[str, Any]:
         """利用可能なOCIサービス一覧を取得する。
 
