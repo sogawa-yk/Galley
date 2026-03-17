@@ -1,0 +1,32 @@
+{
+  "project_name": "inventory-api-demo",
+  "app_type": "api",
+  "compute_type": "compute",
+  "compute_new_or_existing": "new",
+  "language": "python",
+  "framework": "fastapi",
+  "container": "none",
+  "purpose": "poc",
+  "database": {
+    "type": "atp",
+    "sizing": "minimal",
+    "name": "inventory-api-demo-db"
+  },
+  "network": {
+    "vcn": "new",
+    "subnet_type": "public",
+    "load_balancer": false,
+    "access_type": "public"
+  },
+  "sizing": {
+    "ocpu": 1,
+    "memory_gb": 8,
+    "shape": "VM.Standard.E4.Flex"
+  },
+  "additional_services": [],
+  "sample_data": {
+    "description": "商品マスタと在庫データの基本的なサンプルデータ",
+    "seed_required": true
+  },
+  "warnings": []
+}

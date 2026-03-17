@@ -1,0 +1,33 @@
+{
+  "project_name": "ticket-system-demo",
+  "app_type": "web",
+  "compute_type": "container_instances",
+  "compute_new_or_existing": "new",
+  "language": "nodejs",
+  "framework": "express",
+  "container": "docker",
+  "purpose": "customer_demo",
+  "database": {
+    "type": "mysql",
+    "sizing": "minimal",
+    "name": "ticket-system-demo-db"
+  },
+  "network": {
+    "vcn": "new",
+    "subnet_type": "private",
+    "load_balancer": true,
+    "access_type": "lb_public"
+  },
+  "sizing": {
+    "ocpu": 1,
+    "memory_gb": 8,
+    "shape": "CI.Standard.E4.Flex"
+  },
+  "additional_services": ["logging"],
+  "sample_data": {
+    "description": "サンプルチケットデータとユーザーアカウント（admin/user）",
+    "seed_required": true
+  },
+  "custom_requirements": ["ログイン認証機能（セッションベース）"],
+  "warnings": []
+}

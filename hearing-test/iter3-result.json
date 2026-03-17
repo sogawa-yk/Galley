@@ -1,0 +1,18 @@
+{
+  "project_name": "image-resize-api",
+  "app_type": "serverless",
+  "compute_type": "functions",
+  "compute_new_or_existing": "new",
+  "language": "python",
+  "framework": "flask",
+  "container": "functions",
+  "purpose": "poc",
+  "network": {
+    "vcn": "new",
+    "subnet_type": "private",
+    "load_balancer": false,
+    "access_type": "public"
+  },
+  "additional_services": ["object_storage", "api_gateway"],
+  "warnings": []
+}
