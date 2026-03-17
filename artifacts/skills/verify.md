@@ -37,6 +37,9 @@ base_url = endpoints["url"]
 
 ### Phase 2: ヘルスチェック
 
+**Functions + API Gateway の場合:**
+ヘルスチェックURLは API Gateway 経由のURL + `/health` パスを使用してください。API Gateway のデプロイメントに `/health` ルートが含まれている必要があります（generate-terraform が設定）。
+
 ```python
 from src.e2e_runner import health_check
 
@@ -55,15 +58,24 @@ print(f"Health check: {'PASS' if result['passed'] else 'FAIL'}")
 
 ### Phase 3: 機能テスト
 
-1. `hearing/result.json` のアプリ要件から、テストすべきAPIエンドポイントを特定
-2. テストスペックを構築:
+テストスペック生成手順:
+1. `hearing/result.json`の`custom_requirements`から機能エンドポイントを推定
+2. `generated/{project_name}/app/`のルーティング定義を読み取り、全エンドポイントをリスト化
+3. 各エンドポイントに対して:
+   - GETエンドポイント: 正常系(200)のテスト
+   - POST/PUTエンドポイント: サンプルペイロードで正常系テスト（生成されたアプリのスキーマ/モデル定義を参照して有効なペイロードを構築）
+   - 各リソースに1つ以上のエラーケース（404, 422等）
+4. 認証付きエンドポイント: Phase 3の認証手順でセッション取得後テスト
+
+テストスペックを構築:
 
 ```python
 test_specs = [
     {"name": "Health Check", "url": f"{base_url}/health", "expected_status": 200},
-    # アプリの機能に応じて追加
+    # 例: ルーティング定義から推定したエンドポイント
     # {"name": "GET /api/items", "url": f"{base_url}/api/items", "expected_status": 200},
-    # {"name": "POST /api/items", "url": f"{base_url}/api/items", "method": "POST", "payload": {...}},
+    # {"name": "POST /api/items", "url": f"{base_url}/api/items", "method": "POST", "payload": {"name": "test", "quantity": 1}, "expected_status": 201},
+    # {"name": "GET /api/items/99999 (not found)", "url": f"{base_url}/api/items/99999", "expected_status": 404},
 ]
 ```
 
@@ -73,13 +85,19 @@ test_specs = [
 
 1. まず認証エンドポイントにログインリクエストを送信:
 ```python
+import json
 import requests
 session = requests.Session()
+
+# generate-appが出力したシード認証情報を読み取り
+creds_path = f"generated/{project_name}/app/seed-credentials.json"
+with open(creds_path) as f:
+    creds = json.load(f)
 
 # サンプルユーザーでログイン（generate-appのseedデータを使用）
 login_response = session.post(
     f"{base_url}/auth/login",
-    data={"username": "admin", "password": "password123"},
+    data={"username": creds["username"], "password": creds["password"]},
     allow_redirects=False,
 )
 ```
@@ -93,14 +111,42 @@ test_specs_authenticated = [
 ]
 ```
 
-3. `run_test_suite` はセッションオブジェクトをサポートしていない場合、個別に `session.get()` でテストしてレポートに結果を追加してください。
+3. `run_test_suite` はセッションオブジェクトをサポートしていないため、認証付きテストは個別に `session.get()` でテストし、結果をマージしてください。
 
-3. テスト実行:
+4. テスト実行:
 ```python
 from src.e2e_runner import run_test_suite
 
 results = run_test_suite(test_specs)
 print(f"Results: {results['passed']}/{results['total']} passed")
+```
+
+5. 認証付きテスト結果のマージ:
+```python
+# 認証付きエンドポイントを個別にテスト
+authenticated_results = []
+for spec in test_specs_authenticated:
+    try:
+        resp = session.get(spec["url"])
+        passed = resp.status_code == spec["expected_status"]
+        authenticated_results.append({
+            "name": spec["name"],
+            "passed": passed,
+            "status_code": resp.status_code,
+            "expected_status": spec["expected_status"],
+        })
+    except Exception as e:
+        authenticated_results.append({
+            "name": spec["name"],
+            "passed": False,
+            "error": str(e),
+        })
+
+# メインの結果にマージ
+results["results"].extend(authenticated_results)
+results["total"] += len(authenticated_results)
+results["passed"] += sum(1 for r in authenticated_results if r["passed"])
+results["failed"] = results["total"] - results["passed"]
 ```
 
 ---

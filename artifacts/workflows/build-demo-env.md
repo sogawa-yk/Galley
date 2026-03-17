@@ -3,6 +3,17 @@
 ## Description
 プリセールスエンジニアの要望から、OCI上のデモ環境を完全自動で構築するメインオーケストレーターWorkflowです。
 
+## データフロー
+
+```
+hearing → hearing/result.json
+generate-terraform → generated/{project_name}/terraform/
+deploy-infra → generated/{project_name}/stack_outputs.json
+generate-app → generated/{project_name}/app/
+deploy-app → generated/{project_name}/endpoints.json
+verify → generated/{project_name}/test_results.json
+```
+
 ## Steps
 
 ### Step 1: ヒアリング
@@ -12,6 +23,8 @@ Use skill: hearing
 
 ヒアリングが完了したら次のステップに進みます。
 
+**エラーゲート**: このステップが失敗した場合、以降のステップは実行せず、エラー内容をユーザーに報告してください。
+
 ---
 
 ### Step 2: Terraformコード生成
@@ -19,36 +32,25 @@ Use skill: hearing
 
 Use skill: generate-terraform
 
+**エラーゲート**: このステップが失敗した場合、以降のステップは実行せず、エラー内容をユーザーに報告してください。
+
 ---
 
-### Step 3: 並行実行 — インフラ構築 + アプリ生成
-
-**以下の2つを並行で実行してください:**
-
-#### 3a: インフラ構築（バックグラウンド）
-Resource ManagerでTerraformをapplyします。これは時間がかかります。
-
-Use skill: deploy-infra
-
-（バックグラウンドエージェントとして実行）
-
-**並列実行が不可能な場合の代替フロー:**
-ランタイムがバックグラウンドエージェントをサポートしない場合は、以下の順序で逐次実行してください:
-1. generate-app（アプリ生成・テスト）を先に実行
-2. deploy-infra（インフラ構築）を実行
-この順序により、インフラ構築の待ち時間中にアプリ生成を済ませる並列実行の利点を最大限再現します。
-
-#### 3b: アプリケーション生成（フォアグラウンド）
-インフラ構築を待たずに、アプリケーションコードの生成とテストを行います。
+### Step 3: アプリケーション生成
+アプリケーションコードの生成とテストを行います。
 
 Use skill: generate-app
 
+**エラーゲート**: このステップが失敗した場合、以降のステップは実行せず、エラー内容をユーザーに報告してください。
+
 ---
 
-### Step 4: 並行実行の完了待ち
-Step 3a（インフラ構築）と Step 3b（アプリ生成）の両方が完了するのを待ちます。
+### Step 4: インフラ構築
+Resource ManagerでTerraformをapplyします。
 
-両方が完了したら次のステップに進みます。
+Use skill: deploy-infra
+
+**エラーゲート**: このステップが失敗した場合、以降のステップは実行せず、エラー内容をユーザーに報告してください。部分的に作成されたリソースがある場合は、クリーンアップ方法を案内してください（OCI Console > Resource Manager > Stacks > Destroy）。
 
 ---
 
@@ -57,12 +59,16 @@ Step 3a（インフラ構築）と Step 3b（アプリ生成）の両方が完�
 
 Use skill: deploy-app
 
+**エラーゲート**: このステップが失敗した場合、以降のステップは実行せず、エラー内容をユーザーに報告してください。部分的に作成されたリソースがある場合は、クリーンアップ方法を案内してください。
+
 ---
 
 ### Step 6: 動作確認
 デプロイしたアプリケーションのE2Eテストを実行します。
 
 Use skill: verify
+
+**エラーゲート**: このステップが失敗した場合、以降のステップは実行せず、エラー内容をユーザーに報告してください。部分的に作成されたリソースがある場合は、クリーンアップ方法を案内してください。
 
 ---
 

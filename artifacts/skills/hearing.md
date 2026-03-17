@@ -28,6 +28,29 @@
    - `additional_services` — 追加サービス（要望内容に応じて）
 4. 要望テキストから既に明確な情報は「抽出済み」として記録し、対応する質問を省略します
 
+**自然言語→enum値マッピング表:**
+
+抽出した値は以下のマッピングに従ってenum値に変換します:
+
+| フィールド | ユーザー表現例 | enum値 |
+|---|---|---|
+| app_type | Webアプリ / Webサイト | `"web"` |
+| app_type | API / REST API | `"api"` |
+| app_type | バッチ処理 | `"batch"` |
+| app_type | サーバーレス | `"serverless"` |
+| compute_type | Compute / VM / 仮想マシン | `"compute"` |
+| compute_type | OKE / Kubernetes / K8s | `"oke"` |
+| compute_type | Container Instances | `"container_instances"` |
+| compute_type | Functions / サーバーレス | `"functions"` |
+| purpose | 検証 / PoC / 技術検証 | `"poc"` |
+| purpose | 顧客デモ / 製品デモ | `"customer_demo"` |
+| purpose | トレーニング / ハンズオン | `"training"` |
+| purpose | パフォーマンステスト | `"performance_test"` |
+| database.type | ATP / Autonomous | `"atp"` |
+| database.type | MySQL | `"mysql"` |
+| container | Docker / コンテナ | `"docker"` |
+| container | 直接実行 / コンテナ不要 | `"none"` |
+
 **「抽出済み」と判定するルール:**
 - ユーザーが具体的な値を明示している場合のみ「抽出済み」とする
   - 例: 「PythonのFastAPIで」→ language=python, framework=fastapi は抽出済み
@@ -49,15 +72,17 @@
   - コンテナ化方式: アプリのパッケージング方法（Docker/直接実行/Functions）
   - コンピュート種別: OCI上の実行環境（OKE/Container Instances/Compute/Functions）
 - コンピュート種別が Functions の場合、コンテナ化方式の質問は省略し `container: "functions"` を自動設定する
+- コンピュート種別が Functions 以外（Compute/OKE/Container Instances）の場合、コンテナ化方式の質問は必ず提示する（Computeでもdocker/直接実行の選択肢があるため省略不可）
 
 4. 要望の内容に応じて、テンプレートにない動的な追加質問を最大5問まで生成します
+   - 動的質問とはテンプレート（base-questions.md）に定義されていない質問を指す。条件付きカテゴリ（database, network, additional_services）のテンプレート質問は動的質問にカウントしない
    - デモ環境構築に直接影響する質問のみ生成する（UIの詳細仕様やビジネスロジックの複雑な条件分岐は不要）
    - 以下の観点で質問を生成:
      - サンプルデータの有無
      - フロントエンドの方式
      - 認証の要否
      - 外部連携の有無
-5. すべての質問を本Skill内の「質問形式（厳守）」セクションで定義された形式で `hearing/questions.md` に出力します
+5. すべての質問を本Skill内の「質問形式（厳守）」セクションで定義された形式で `hearing/questions.md` に出力します（ファイルパスはワークスペースルートからの相対パス）
 
 **質問形式（厳守）:**
 ```markdown
@@ -71,6 +96,8 @@ X) Other (please describe after [Answer]: tag below)
 
 [Answer]:
 ```
+
+- 複数選択時はカンマ区切りで回答（例: `[Answer]: A, D`）
 
 6. ユーザーに以下のメッセージを伝えます:
 
@@ -103,6 +130,8 @@ hearing/questions.md にヒアリング質問を作成しました。
    - **構成矛盾**: プライベートサブネットなのにパブリックIPを要求
    - **リソース矛盾**: 必須パラメータの未指定
    - **論理矛盾**: 回答A と回答B が相互に矛盾
+   - **クロスフェーズ矛盾**: Phase 1で抽出した値とPhase 3の回答が矛盾する場合も検出対象（例: Phase 1で compute_type=compute を抽出したが、回答でOKE前提の構成を選択）
+   - **OCI固有矛盾**: パブリックサブネットのComputeからATPへの接続はService Gateway/Private Endpoint経由が必要。access_type=public かつ database.type=atp の場合、ネットワーク構成にService GatewayまたはATP Private Endpointが必要である旨を警告する
 
 2. **矛盾が見つかった場合:**
    - `hearing/clarification-{round}.md` にAI-DLC形式で追加質問を生成します
@@ -131,8 +160,10 @@ hearing/questions.md にヒアリング質問を作成しました。
   "app_type": "string (web/api/batch/serverless/microservices)",
   "compute_type": "string (oke/container_instances/compute/functions)",
   "compute_new_or_existing": "string (new/existing)",
+  "container": "string (docker/none/functions)",
   "language": "string",
-  "framework": "string"
+  "framework": "string",
+  "purpose": "string (poc/customer_demo/training/performance_test)"
 }
 ```
 
@@ -154,6 +185,9 @@ hearing/questions.md にヒアリング質問を作成しました。
   - `access_type: "public"` → `subnet_type: "public"`
   - `access_type: "private"` → `subnet_type: "private"`
   - `access_type: "lb_public"` → `subnet_type: "private"`（アプリはLB背後のプライベートサブネット）
+- `load_balancer`: access_typeから推論する
+  - `access_type: "lb_public"` → `load_balancer: true`
+  - それ以外（`"public"`, `"private"`） → `load_balancer: false`（デフォルト）
 - `database.sizing`: コンピュートサイジングに連動する
   - コンピュートが最小構成 → `"minimal"`
   - コンピュートが標準構成 → `"standard"`

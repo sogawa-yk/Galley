@@ -24,6 +24,7 @@
    - `sample_data`: サンプルデータ要件
    - `custom_requirements`: カスタム要件
 3. アプリの機能スコープを決定します（ヒアリング時のユーザー要望を反映）
+4. スコープ決定結果をコメントとしてユーザーに報告してください（ファイル出力不要）
 
 ---
 
@@ -43,6 +44,39 @@
 5. **デモ品質**: 主要機能が動作することを優先、過度なエラーハンドリングは不要
 6. **Webアプリの場合**: 主要UI要素に `data-testid` 属性を付与
 7. **サンプルデータ**: `sample_data` が指定されている場合、シードデータ/初期データを含める
+8. **シードデータ実行**: `sample_data.seed_required=true` の場合、アプリ起動時にべき等なシードを実行（存在チェック後に挿入）
+9. **シード認証情報の出力**: 認証機能がある場合、シードデータのログイン情報を `generated/{project_name}/app/seed-credentials.json` に出力してください:
+   ```json
+   {"username": "admin", "password": "password123"}
+   ```
+   verifyスキルがこのファイルを読み取ってE2Eテストの認証に使用します。
+
+**データベースローカル開発戦略:**
+
+| database.type | Local開発用DB | ORM |
+|---|---|---|
+| atp | SQLite (ローカル) / Oracle (本番) | SQLAlchemy |
+| mysql | SQLite (ローカル) / MySQL (本番) | SQLAlchemy / Sequelize |
+
+> ローカルテスト時はSQLiteを使用し、`DB_CONNECTION_STRING`が未設定の場合はSQLiteにフォールバックする設計にしてください
+
+**言語/フレームワーク別ガイダンス:**
+
+| 言語/FW | プロジェクト構成 | ORM | テストFW | 依存管理 |
+|---|---|---|---|---|
+| Python/FastAPI | routers/, models.py, schemas.py, database.py | SQLAlchemy | pytest | requirements.txt |
+| Python/Flask | routes/, models.py | SQLAlchemy | pytest | requirements.txt |
+| Node.js/Express | routes/, models/, middleware/ | Sequelize/Prisma | Jest | package.json |
+
+**認証パターン（custom_requirementsに認証要件がある場合）:**
+- Web app (app_type=web): セッションベース認証（express-session/Flask-Login）
+- API (app_type=api): JWT認証（jsonwebtoken/PyJWT）
+- エンドポイント: POST /auth/login (ログイン), POST /auth/logout (ログアウト), GET /auth/register (登録画面 - web only)
+
+**テンプレートエンジン（app_type=webの場合）:**
+- Node.js/Express: EJSをデフォルト使用、views/ディレクトリにテンプレート配置
+- Python/Flask: Jinja2（デフォルト）、templates/ディレクトリ
+- Python/FastAPI: Jinja2Templates、templates/ディレクトリ
 
 **アプリ種別別の生成内容:**
 
@@ -54,6 +88,10 @@
 | serverless | OCI Functions用のfunc.py/func.js + func.yaml |
 | microservices | 複数サービス（各サービスにDockerfile） |
 
+**app_type と compute_type の組み合わせ:**
+- `app_type: api` + `compute_type: functions` → Flask/FastAPI APIをOCI Functions handlerでラップ。`func.py`でfdkを使用してFlaskアプリをハンドラーとして登録。
+- `app_type: serverless` → 純粋なOCI Functions（Webフレームワーク不使用）
+
 ---
 
 ### Phase 3: テスト生成・実行（自己修正ループ）
@@ -64,6 +102,7 @@
    - ビジネスロジックのテスト
    - データモデルのテスト（DB使用時）
    - 言語標準のテストフレームワーク使用
+   - テスト用DBはインメモリSQLiteを使用し、テストごとにリセットする
 
 2. **結合テスト**を生成してください
    - 全APIエンドポイントの正常系テスト
@@ -92,14 +131,18 @@
 
 ### Phase 4: ビルド設定生成
 
-1. **Dockerfile** を `generated/{project_name}/app/Dockerfile` に生成
+1. **Dockerfile** を `generated/{project_name}/app/Dockerfile` に生成（**`compute_type: functions` の場合はスキップ** — `fn deploy` が `func.yaml` を使用してビルドするため、別途Dockerfileは不要）
    - マルチステージビルド（builder + runtime）
    - `HEALTHCHECK` 命令を含める（`/health` エンドポイント）
    - `EXPOSE 8080`
+   - Dockerfileは `generated/{project_name}/app/Dockerfile` に配置。CMD のモジュールパスはDockerfile内の`WORKDIR`とソースコピー先に合わせてください。例: `WORKDIR /app` + `COPY . .` → `CMD ["uvicorn", "main:app"]`（`app.main`ではなく`main`）
+   - ランタイムステージでは非rootユーザーで実行してください（`RUN adduser --disabled-password appuser && USER appuser`）
 
-2. **OCI Functions の場合**: `func.yaml` を生成
+2. **`.dockerignore`** を生成してください（`.venv/`, `__pycache__/`, `*.pyc`, `tests/`, `.pytest_cache/`, `node_modules/`, `*.test.*` を除外）
 
-3. **build.sh** をオプションで生成（ローカルビルド・テスト用）
+3. **OCI Functions の場合**: `func.yaml` を生成
+
+4. **build.sh** をオプションで生成（ローカルビルド・テスト用）
 
 ---
 

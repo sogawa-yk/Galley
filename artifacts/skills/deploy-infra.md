@@ -62,6 +62,8 @@ except RuntimeError:
 
 #### 2.1: Stack作成
 
+`create_stack()` はupsert動作します。同名のStackが既に存在する場合は自動的に更新（Terraformコードの再アップロード）を行い、存在しない場合は新規作成します。自己修正ループでコード修正後に再度呼び出しても、新しいStackは作成されません。
+
 ```python
 from src.oci_rm import create_stack
 
@@ -135,6 +137,8 @@ print(f"Apply job started: {apply_job_id}")
 apply_result = wait_for_job(apply_job_id, timeout=3600, interval=30)
 ```
 
+**注意**: `run_apply()` は `AUTO_APPROVED` モードで実行されます。これは直前のPlan結果を自動承認してApplyを開始する動作です。デモ環境構築の用途では、Plan → Apply を一貫して実行するためにこの方式を採用しています。
+
 #### 2.5: Apply結果確認
 
 ```python
@@ -179,6 +183,8 @@ stack_id = create_stack(
 ---
 
 ### Phase 3: 結果取得
+
+**注意**: `get_stack_outputs()` はTerraform stateファイルからoutputsを読み取ります。`sensitive = true` のoutput（`db_connection_string`等）はstateからは取得可能ですが、ログ解析フォールバック時にはマスクされるため値が欠落します。stateファイルからの取得に失敗した場合、sensitiveな値は `terraform.tfvars` 等から補完してください。
 
 1. Stack Outputsを取得:
 

@@ -20,7 +20,8 @@
   - OKE: `oke_cluster_id`, `oke_kubeconfig` (sensitive)
   - Container Instances: `container_instance_subnet_id`（デプロイ先サブネットOCID）
   - Compute: `compute_instance_id`, `compute_public_ip`, `compute_private_ip`
-  - Functions: `functions_app_id`
+  - Functions: `functions_app_id`, `functions_invoke_endpoint`（Functions invoke base URL）
+- additional_servicesにapi_gatewayがある場合: `api_gateway_url`（API Gateway deployment endpoint URL）
 - DB使用時: `db_connection_string` (sensitive), `db_ocid`
 - LB使用時: `lb_public_ip`, `lb_ocid`
 - OCIR: `ocir_repo_url`（`{region_key}.ocir.io/{tenancy_namespace}/{project_name}` 形式のプレースホルダー出力）
@@ -78,6 +79,7 @@
 - additional.tf（additional_services要求時 — ファイル名はadditional_servicesの内容に応じて変更可: loggingのみなら `logging.tf`、object_storageのみなら `storage.tf`、複数なら `additional.tf`）
 - lb.tf（LB要求時）
 - outputs.tf（常に生成）
+- cloud-init.sh（compute_type=compute時に生成 — Dockerインストール、ファイアウォール設定、必要なランタイムのセットアップを含む）
 
 **生成前に**: `artifacts/skills/tf-templates/` 配下の参照テンプレートを読み込み、パターンに従ってコードを生成してください。
 
@@ -101,6 +103,14 @@ provider "oci" {
 
 **注意**: `backend` ブロックは含めないでください。Resource Managerがstate管理します。
 
+**注意**: database（ATP/MySQL）を使用する場合、`random_password` リソースのために `hashicorp/random` プロバイダーを `required_providers` ブロックに追加してください:
+```hcl
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.5.0"
+    }
+```
+
 #### 2.2: variables.tf（常に生成）
 
 必須変数:
@@ -113,6 +123,17 @@ provider "oci" {
 **変数命名の注意:**
 - コンピュートサイジング: `var.compute_ocpu`, `var.compute_memory_gb`, `var.compute_shape`（result.jsonの`sizing`オブジェクトから）
 - DBサイジング: `var.db_sizing`（result.jsonの`database.sizing`から。`var.sizing`は使用しない — top-levelの`sizing`オブジェクトと衝突するため）
+- DB名: `var.db_name`（result.jsonの`database.name`から。ATP/MySQLの`display_name`に使用。未指定時のデフォルトは`{project_name}-db`）
+- SSHキー: `var.ssh_public_key`（compute_type=compute時に必須。インスタンスの`metadata.ssh_authorized_keys`に設定）
+- OCIR関連: `var.region_key`（リージョンキー、例: `nrt`）と `var.tenancy_namespace`（テナンシーのオブジェクトストレージネームスペース）。代替として、以下のdata sourceで自動取得も可:
+  ```hcl
+  data "oci_objectstorage_namespace" "ns" {
+    compartment_id = var.compartment_id
+  }
+  data "oci_identity_region_subscriptions" "regions" {
+    tenancy_id = var.tenancy_id
+  }
+  ```
 
 #### 2.3: terraform.tfvars（常に生成）
 
@@ -120,6 +141,7 @@ result.jsonの値を変数にマッピングします。
 - `compartment_id` と `region` はプレースホルダー（`"PLACEHOLDER"` — Resource Manager実行時に指定）
 - `project_name` はresult.jsonの値を使用
 - その他の変数はresult.jsonから適切な値を設定
+- **重要**: 定義されたすべてのrequired変数に対してPLACEHOLDER値を含めること（`ssh_public_key = "PLACEHOLDER"`, `region_key = "PLACEHOLDER"` 等）。terraform planが変数未定義エラーにならないようにする
 
 #### 2.4: network.tf（新規VCN時に生成）
 
@@ -131,6 +153,9 @@ result.jsonの値を変数にマッピングします。
 - パブリックサブネット: `10.0.0.0/24`（パブリックアクセス時）
 - プライベートサブネット: `10.0.1.0/24`（常に作成）
 - Internet Gateway, NAT Gateway, Service Gatewayを適切に配置
+- パブリック/プライベート両方のセキュリティリストを生成すること（テンプレート参照）
+- セキュリティリストのアプリポートは8080を開放（全フレームワーク共通）
+- compute_type=compute時はSSH用ポート22もパブリックSLに追加
 
 #### 2.5: compute.tf（常に生成）
 
@@ -156,6 +181,10 @@ locals {
 #### 2.6: database.tf（DB要求時のみ生成）
 
 database.typeに応じたリソースを動的生成。`display_name`にはresult.jsonの`database.name`を使用する（未指定の場合は`{project_name}-db`を使用）。
+
+**ATPサブネット配置ガイダンス**: マネージドデータベース（ATP/MySQL）はプライベートサブネットに配置することを推奨。ATPの場合は `subnet_id` と `nsg_ids` を設定してプライベートエンドポイントアクセスにする。`subnet_id` を省略するとパブリックエンドポイントになるため、セキュリティ上プライベートサブネットを指定すること。
+
+**db_nameの制約**: ATPの `db_name` フィールドは英数字のみ（ハイフン不可）。`replace(var.db_name, "-", "")` で変換すること。
 
 #### 2.7: additional.tf（additional_services要求時のみ生成）
 
