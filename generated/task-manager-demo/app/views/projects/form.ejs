@@ -1,0 +1,30 @@
+<%- include('../partials/header') %>
+<div data-testid="project-form-page">
+  <h1><%= project ? 'Edit Project' : 'New Project' %></h1>
+  <% if (error) { %>
+    <div class="error"><%= error %></div>
+  <% } %>
+  <form method="POST" action="<%= project ? '/projects/' + project.id : '/projects' %>" data-testid="project-form">
+    <div>
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" value="<%= project ? project.name : '' %>" required data-testid="project-name-input">
+    </div>
+    <div>
+      <label for="description">Description</label>
+      <textarea id="description" name="description" data-testid="project-description-input"><%= project ? project.description : '' %></textarea>
+    </div>
+    <% if (project) { %>
+      <div>
+        <label for="status">Status</label>
+        <select id="status" name="status" data-testid="project-status-select">
+          <option value="active" <%= project.status === 'active' ? 'selected' : '' %>>Active</option>
+          <option value="completed" <%= project.status === 'completed' ? 'selected' : '' %>>Completed</option>
+          <option value="archived" <%= project.status === 'archived' ? 'selected' : '' %>>Archived</option>
+        </select>
+      </div>
+    <% } %>
+    <button type="submit" data-testid="project-submit-btn"><%= project ? 'Update' : 'Create' %> Project</button>
+  </form>
+  <a href="/projects">Cancel</a>
+</div>
+<%- include('../partials/footer') %>

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ticket System</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav data-testid="navbar">
+    <div class="nav-brand">Ticket System</div>
+    <% if (user) { %>
+      <div class="nav-links">
+        <a href="/tickets" data-testid="nav-tickets">Tickets</a>
+        <a href="/projects" data-testid="nav-projects">Projects</a>
+        <span data-testid="nav-user"><%= user.displayName %></span>
+        <form action="/auth/logout" method="POST" style="display:inline;">
+          <button type="submit" data-testid="logout-btn">Logout</button>
+        </form>
+      </div>
+    <% } %>
+  </nav>
+  <main class="container">

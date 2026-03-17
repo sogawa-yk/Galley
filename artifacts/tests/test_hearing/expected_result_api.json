@@ -1,0 +1,24 @@
+{
+  "project_name": "api-server-test",
+  "app_type": "api",
+  "compute_type": "oke",
+  "compute_new_or_existing": "new",
+  "language": "go",
+  "framework": "gin",
+  "database": {
+    "type": "none"
+  },
+  "network": {
+    "vcn": "new",
+    "subnet_type": "public",
+    "load_balancer": true,
+    "access_type": "lb_public"
+  },
+  "sizing": {
+    "ocpu": 2,
+    "memory_gb": 16,
+    "shape": "VM.Standard.E4.Flex"
+  },
+  "additional_services": ["logging"],
+  "warnings": []
+}

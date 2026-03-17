@@ -1,0 +1,28 @@
+<%- include('../partials/header') %>
+<div data-testid="tasks-page">
+  <h1>Tasks</h1>
+  <a href="/tasks/new" class="btn" data-testid="new-task-btn">New Task</a>
+  <div data-testid="task-list">
+    <% if (tasks.length === 0) { %>
+      <p>No tasks found.</p>
+    <% } else { %>
+      <table>
+        <thead>
+          <tr><th>Title</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Project</th></tr>
+        </thead>
+        <tbody>
+          <% tasks.forEach(task => { %>
+            <tr data-testid="task-row">
+              <td><a href="/tasks/<%= task.id %>" data-testid="task-link"><%= task.title %></a></td>
+              <td><%= task.status %></td>
+              <td><%= task.priority %></td>
+              <td><%= task.assignee_name || 'Unassigned' %></td>
+              <td><%= task.project_name || '-' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/footer') %>

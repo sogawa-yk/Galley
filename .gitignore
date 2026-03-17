@@ -1,62 +1,30 @@
-# Node.js
+# Dependencies
 node_modules/
-
-# Python
+.venv/
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
+
+# Build artifacts
+.pytest_cache/
+.coverage
 *.egg-info/
 dist/
 build/
-*.egg
 
-# 仮想環境
-.venv/
-venv/
-
-# ランタイムデータ（ローカルテスト用）
-.galley/
-
-# IDE（個人設定）
-.vscode/*.code-workspace
+# IDE
 .idea/
+.vscode/
+*.swp
 
 # OS
 .DS_Store
 Thumbs.db
 
-# 環境変数
-.env
-.env.local
+# Lock files (generated, large)
+uv.lock
+package-lock.json
 
-# Terraform (deploy/ - ユーザー向けデプロイテンプレート)
-deploy/.terraform/
-deploy/.terraform.lock.hcl
-deploy/terraform.tfstate
-deploy/terraform.tfstate.backup
-deploy/terraform.tfvars
-deploy/*.tfvars
-deploy/.terraform.tfstate.lock.info
-
-# Terraform (infra/preview/ - 開発プレビュー環境)
-infra/preview/.terraform/
-infra/preview/.terraform.lock.hcl
-infra/preview/terraform.tfstate
-infra/preview/terraform.tfstate.backup
-infra/preview/terraform.tfvars
-infra/preview/*.tfvars
-infra/preview/.terraform.tfstate.lock.info
-
-# テスト・カバレッジ
-.coverage
-htmlcov/
-.pytest_cache/
-
-# mypy
-.mypy_cache/
-
-# Ruff
-.ruff_cache/
-
-# MCP local config
-.mcp.json
+# Test databases
+*.db
+*.sqlite3
+.terraform/

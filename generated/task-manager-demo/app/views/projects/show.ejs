@@ -1,0 +1,24 @@
+<%- include('../partials/header') %>
+<div data-testid="project-detail-page">
+  <h1><%= project.name %></h1>
+  <p><%= project.description %></p>
+  <p><strong>Status:</strong> <%= project.status %></p>
+  <p><strong>Owner:</strong> <%= project.owner_name %></p>
+  <div class="actions">
+    <a href="/projects/<%= project.id %>/edit" class="btn" data-testid="edit-project-btn">Edit</a>
+    <form method="POST" action="/projects/<%= project.id %>/delete" style="display:inline">
+      <button type="submit" class="btn btn-danger" data-testid="delete-project-btn">Delete</button>
+    </form>
+  </div>
+  <h2>Tasks</h2>
+  <div data-testid="project-tasks">
+    <% tasks.forEach(task => { %>
+      <div data-testid="task-item">
+        <a href="/tasks/<%= task.id %>"><%= task.title %></a>
+        <span class="badge badge-<%= task.status %>"><%= task.status %></span>
+      </div>
+    <% }) %>
+  </div>
+  <a href="/projects">Back to Projects</a>
+</div>
+<%- include('../partials/footer') %>

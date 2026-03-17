@@ -1,0 +1,27 @@
+<%- include('../partials/header') %>
+
+<div data-testid="projects-page">
+  <h1>Projects</h1>
+  <table data-testid="projects-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Status</th>
+        <th>Tickets</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% projects.forEach(project => { %>
+        <tr data-testid="project-row">
+          <td><a href="/projects/<%= project.id %>" data-testid="project-link"><%= project.name %></a></td>
+          <td><%= project.description || '-' %></td>
+          <td><%= project.status %></td>
+          <td><%= project.tickets ? project.tickets.length : 0 %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('../partials/footer') %>

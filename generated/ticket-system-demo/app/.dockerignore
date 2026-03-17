@@ -1,0 +1,8 @@
+node_modules/
+tests/
+*.test.*
+.git/
+.gitignore
+database.sqlite
+npm-debug.log
+.env

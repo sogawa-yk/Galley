@@ -1,0 +1,5 @@
+compartment_id    = "PLACEHOLDER"
+region            = "PLACEHOLDER"
+project_name      = "image-resize-api"
+region_key        = "PLACEHOLDER"
+tenancy_namespace = "PLACEHOLDER"

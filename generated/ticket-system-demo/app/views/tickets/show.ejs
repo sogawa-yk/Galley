@@ -1,0 +1,46 @@
+<%- include('../partials/header') %>
+
+<div data-testid="ticket-detail-page">
+  <h1 data-testid="ticket-title"><%= ticket.title %></h1>
+
+  <div class="ticket-meta">
+    <p><strong>Project:</strong> <a href="/projects/<%= ticket.project.id %>"><%= ticket.project.name %></a></p>
+    <p><strong>Status:</strong> <span class="status-badge status-<%= ticket.status %>" data-testid="ticket-detail-status"><%= ticket.status %></span></p>
+    <p><strong>Priority:</strong> <span class="priority-badge priority-<%= ticket.priority %>"><%= ticket.priority %></span></p>
+    <p><strong>Creator:</strong> <%= ticket.creator ? ticket.creator.displayName : 'Unknown' %></p>
+    <p><strong>Assignee:</strong> <span data-testid="ticket-detail-assignee"><%= ticket.assignee ? ticket.assignee.displayName : 'Unassigned' %></span></p>
+  </div>
+
+  <div class="ticket-description" data-testid="ticket-description">
+    <h2>Description</h2>
+    <p><%= ticket.description || 'No description' %></p>
+  </div>
+
+  <div class="ticket-actions">
+    <h2>Update Status</h2>
+    <form action="/tickets/<%= ticket.id %>/status" method="POST" data-testid="status-form">
+      <select name="status" data-testid="select-status">
+        <option value="open" <%= ticket.status === 'open' ? 'selected' : '' %>>Open</option>
+        <option value="in_progress" <%= ticket.status === 'in_progress' ? 'selected' : '' %>>In Progress</option>
+        <option value="resolved" <%= ticket.status === 'resolved' ? 'selected' : '' %>>Resolved</option>
+        <option value="closed" <%= ticket.status === 'closed' ? 'selected' : '' %>>Closed</option>
+      </select>
+      <button type="submit" data-testid="update-status-btn">Update Status</button>
+    </form>
+
+    <h2>Assign</h2>
+    <form action="/tickets/<%= ticket.id %>/assign" method="POST" data-testid="assign-form">
+      <select name="assigneeId" data-testid="select-assign-user">
+        <option value="">Unassigned</option>
+        <% users.forEach(u => { %>
+          <option value="<%= u.id %>" <%= ticket.assigneeId === u.id ? 'selected' : '' %>><%= u.displayName %></option>
+        <% }) %>
+      </select>
+      <button type="submit" data-testid="assign-btn">Assign</button>
+    </form>
+  </div>
+
+  <a href="/tickets" class="btn-secondary">Back to Tickets</a>
+</div>
+
+<%- include('../partials/footer') %>

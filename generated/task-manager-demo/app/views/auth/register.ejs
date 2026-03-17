@@ -1,0 +1,28 @@
+<%- include('../partials/header') %>
+<div data-testid="register-page">
+  <h1>Register</h1>
+  <% if (error) { %>
+    <div class="error" data-testid="register-error"><%= error %></div>
+  <% } %>
+  <form method="POST" action="/auth/register" data-testid="register-form">
+    <div>
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required data-testid="register-username">
+    </div>
+    <div>
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required data-testid="register-email">
+    </div>
+    <div>
+      <label for="display_name">Display Name</label>
+      <input type="text" id="display_name" name="display_name" data-testid="register-displayname">
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required data-testid="register-password">
+    </div>
+    <button type="submit" data-testid="register-submit">Register</button>
+  </form>
+  <p>Already have an account? <a href="/auth/login" data-testid="login-link">Login</a></p>
+</div>
+<%- include('../partials/footer') %>

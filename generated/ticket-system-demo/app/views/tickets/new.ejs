@@ -1,0 +1,49 @@
+<%- include('../partials/header') %>
+
+<div data-testid="new-ticket-page">
+  <h1>New Ticket</h1>
+  <% if (error) { %>
+    <div class="error-message" data-testid="form-error"><%= error %></div>
+  <% } %>
+  <form action="/tickets" method="POST" data-testid="ticket-form">
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" data-testid="input-title" required>
+    </div>
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea id="description" name="description" data-testid="input-description" rows="4"></textarea>
+    </div>
+    <div class="form-group">
+      <label for="projectId">Project</label>
+      <select id="projectId" name="projectId" data-testid="select-project" required>
+        <option value="">Select Project</option>
+        <% projects.forEach(project => { %>
+          <option value="<%= project.id %>"><%= project.name %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="priority">Priority</label>
+      <select id="priority" name="priority" data-testid="select-priority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="assigneeId">Assignee</label>
+      <select id="assigneeId" name="assigneeId" data-testid="select-assignee">
+        <option value="">Unassigned</option>
+        <% users.forEach(u => { %>
+          <option value="<%= u.id %>"><%= u.displayName %></option>
+        <% }) %>
+      </select>
+    </div>
+    <button type="submit" data-testid="submit-ticket">Create Ticket</button>
+    <a href="/tickets" class="btn-secondary">Cancel</a>
+  </form>
+</div>
+
+<%- include('../partials/footer') %>

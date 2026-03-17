@@ -1,0 +1,20 @@
+<%- include('../partials/header') %>
+<div data-testid="task-detail-page">
+  <h1><%= task.title %></h1>
+  <div data-testid="task-details">
+    <p><strong>Description:</strong> <%= task.description %></p>
+    <p><strong>Status:</strong> <span data-testid="task-status"><%= task.status %></span></p>
+    <p><strong>Priority:</strong> <span data-testid="task-priority"><%= task.priority %></span></p>
+    <p><strong>Assignee:</strong> <%= task.assignee_name || 'Unassigned' %></p>
+    <p><strong>Project:</strong> <%= task.project_name || '-' %></p>
+    <p><strong>Creator:</strong> <%= task.creator_name %></p>
+  </div>
+  <div class="actions">
+    <a href="/tasks/<%= task.id %>/edit" class="btn" data-testid="edit-task-btn">Edit</a>
+    <form method="POST" action="/tasks/<%= task.id %>/delete" style="display:inline">
+      <button type="submit" class="btn btn-danger" data-testid="delete-task-btn">Delete</button>
+    </form>
+  </div>
+  <a href="/tasks">Back to Tasks</a>
+</div>
+<%- include('../partials/footer') %>

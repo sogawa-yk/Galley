@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Manager</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav data-testid="navbar">
+    <div class="nav-brand">Task Manager</div>
+    <% if (isAuthenticated) { %>
+      <div class="nav-links">
+        <a href="/dashboard" data-testid="nav-dashboard">Dashboard</a>
+        <a href="/tasks" data-testid="nav-tasks">Tasks</a>
+        <a href="/projects" data-testid="nav-projects">Projects</a>
+        <span><%= currentUser.display_name %></span>
+        <a href="/auth/logout" data-testid="nav-logout">Logout</a>
+      </div>
+    <% } %>
+  </nav>
+  <main class="container">

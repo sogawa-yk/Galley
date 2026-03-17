@@ -1,0 +1,30 @@
+{
+  "project_name": "ecommerce-demo",
+  "app_type": "web",
+  "compute_type": "container_instances",
+  "compute_new_or_existing": "new",
+  "language": "python",
+  "framework": "fastapi",
+  "database": {
+    "type": "atp",
+    "sizing": "minimal",
+    "name": "ecommerce-db"
+  },
+  "network": {
+    "vcn": "new",
+    "subnet_type": "public",
+    "load_balancer": true,
+    "access_type": "lb_public"
+  },
+  "sizing": {
+    "ocpu": 1,
+    "memory_gb": 8,
+    "shape": "VM.Standard.E4.Flex"
+  },
+  "additional_services": [],
+  "sample_data": {
+    "description": "商品カタログと注文履歴のサンプルデータ",
+    "seed_required": true
+  },
+  "warnings": []
+}

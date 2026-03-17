@@ -1,0 +1,38 @@
+{
+  "project_name": "task-manager-demo",
+  "app_type": "web",
+  "compute_type": "oke",
+  "compute_new_or_existing": "new",
+  "language": "nodejs",
+  "framework": "express",
+  "container": "docker",
+  "purpose": "customer_demo",
+  "database": {
+    "type": "mysql",
+    "sizing": "standard",
+    "name": "task-manager-db"
+  },
+  "network": {
+    "vcn": "new",
+    "subnet_type": "private",
+    "load_balancer": true,
+    "access_type": "lb_public"
+  },
+  "sizing": {
+    "ocpu": 2,
+    "memory_gb": 16,
+    "shape": "VM.Standard.E4.Flex"
+  },
+  "additional_services": [
+    "logging"
+  ],
+  "sample_data": {
+    "description": "タスク、プロジェクト、チームメンバーのサンプルデータ（デモ用）",
+    "seed_required": true
+  },
+  "custom_requirements": [
+    "サーバーサイドレンダリング（EJS/Pug）によるフロントエンド",
+    "ユーザー名/パスワードによるログイン認証機能",
+    "タスクの作成・割り当て・進捗管理機能"
+  ]
+}
